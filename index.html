@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記數app - 賭博遊戲輸贏記錄</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <!-- Welcome Screen -->
+    <div id="welcomeScreen" class="screen">
+        <div class="container">
+            <div class="welcome-content">
+                <h1 class="welcome-title">記數app</h1>
+                <p class="welcome-subtitle">賭博遊戲輸贏記錄</p>
+                <div class="welcome-actions">
+                    <button class="btn btn--primary btn--lg btn--full-width" onclick="showPlayerSetup()">開始新遊戲</button>
+                    <button class="btn btn--secondary btn--lg btn--full-width" id="continueGameBtn" onclick="continueGame()" style="display: none;">繼續遊戲</button>
+                    <button class="btn btn--outline btn--lg btn--full-width" onclick="showLoadGame()">載入遊戲</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Game Screen -->
+    <div id="loadGameScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <button class="btn-back" onclick="showWelcome()">← 返回</button>
+                <h2>載入遊戲</h2>
+            </div>
+            <div class="load-game-content">
+                <div class="form-group">
+                    <label class="form-label">選擇遊戲記錄檔案</label>
+                    <input type="file" id="gameFileInput" class="form-control" accept=".json" onchange="handleGameFileSelect(event)">
+                </div>
+                <div class="load-instructions">
+                    <p>請選擇之前保存的 JSON 格式遊戲記錄檔案</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Setup Screen -->
+    <div id="playerSetupScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <button class="btn-back" onclick="showWelcome()">← 返回</button>
+                <h2>添加玩家</h2>
+                <button class="btn-settings" onclick="showSettings()">⚙️</button>
+            </div>
+            <div class="banker-rounds-info">
+                莊家輪數設定: <span id="currentBankerRounds">3</span> 輪
+            </div>
+            <div class="player-setup">
+                <div class="form-group">
+                    <label class="form-label">玩家名稱</label>
+                    <input type="text" id="playerNameInput" class="form-control" placeholder="輸入玩家名稱" maxlength="20">
+                    <button class="btn btn--primary btn--sm" onclick="addPlayer()">添加</button>
+                </div>
+                <div class="player-list" id="playerList"></div>
+                <div class="setup-actions">
+                    <button class="btn btn--secondary btn--full-width" id="confirmPlayersBtn" onclick="confirmPlayers()" disabled>確認玩家 (最少2人)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settingsScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <button class="btn-back" onclick="goBackFromSettings()">← 返回</button>
+                <h2>設定</h2>
+            </div>
+            <div class="settings-content">
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">莊家輪數</div>
+                        <div class="setting-description">每位玩家當莊家的輪數</div>
+                    </div>
+                    <select id="bankerRoundsSelect" class="form-control setting-select" onchange="updateBankerRounds(this.value)">
+                        <option value="1">1 輪</option>
+                        <option value="2">2 輪</option>
+                        <option value="3" selected>3 輪</option>
+                        <option value="4">4 輪</option>
+                        <option value="5">5 輪</option>
+                        <option value="6">6 輪</option>
+                        <option value="7">7 輪</option>
+                        <option value="8">8 輪</option>
+                        <option value="9">9 輪</option>
+                        <option value="10">10 輪</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banker Selection Screen -->
+    <div id="bankerSelectionScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <button class="btn-back" onclick="goBackFromBankerSelection()">← 返回</button>
+                <h2>選擇莊家</h2>
+                <div class="round-info">第 <span id="currentRoundNumber">1</span> 輪</div>
+            </div>
+            <div class="banker-list" id="bankerList"></div>
+        </div>
+    </div>
+
+    <!-- Record Screen -->
+    <div id="recordScreen" class="screen hidden">
+        <div class="container">
+            <div class="record-content">
+                <div class="header">
+                    <button class="btn-back" onclick="showBankerSelection()">← 返回</button>
+                    <h2>記錄輸贏</h2>
+                    <div class="round-info">
+                        第 <span id="recordRoundNumber">1</span> 輪 - 莊家: <span id="currentBankerName"></span>
+                    </div>
+                </div>
+                <div class="player-record-list" id="playerRecordList"></div>
+                <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪</button>
+            </div>
+            <div class="bottom-nav">
+                <button class="nav-item active" onclick="showRecord()">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-label">記錄</span>
+                </button>
+                <button class="nav-item" onclick="showDetailedRecords()">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">詳細</span>
+                </button>
+                <button class="nav-item" onclick="showStatistics()">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-label">統計</span>
+                </button>
+                <button class="nav-item" onclick="showSettings()">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">設定</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Records Screen -->
+    <div id="detailedRecordsScreen" class="screen hidden">
+        <div class="container">
+            <div class="detailed-content">
+                <div class="header">
+                    <button class="btn-back" onclick="showRecord()">← 返回</button>
+                    <h2>詳細記錄</h2>
+                </div>
+                <div class="table-container">
+                    <table class="records-table" id="recordsTable">
+                        <thead>
+                            <tr id="tableHeaderRow">
+                                <th>輪數</th>
+                                <th>莊家</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsTableBody">
+                        </tbody>
+                        <tfoot>
+                            <tr class="totals-row" id="totalsRow">
+                                <td><strong>總計</strong></td>
+                                <td>-</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="bottom-nav">
+                <button class="nav-item" onclick="showRecord()">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-label">記錄</span>
+                </button>
+                <button class="nav-item active" onclick="showDetailedRecords()">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">詳細</span>
+                </button>
+                <button class="nav-item" onclick="showStatistics()">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-label">統計</span>
+                </button>
+                <button class="nav-item" onclick="showSettings()">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">設定</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Screen -->
+    <div id="statisticsScreen" class="screen hidden">
+        <div class="container">
+            <div class="stats-content">
+                <div class="header">
+                    <button class="btn-back" onclick="goBackFromStatistics()">← 返回</button>
+                    <h2>統計</h2>
+                </div>
+                <div class="statistics-content" id="statisticsContent"></div>
+                <div class="export-actions">
+                    <button class="btn btn--primary btn--full-width" onclick="exportToExcel()">匯出Excel</button>
+                    <button class="btn btn--secondary btn--full-width" onclick="saveGame()">保存遊戲</button>
+                </div>
+            </div>
+            <div class="bottom-nav">
+                <button class="nav-item" onclick="showRecord()">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-label">記錄</span>
+                </button>
+                <button class="nav-item" onclick="showDetailedRecords()">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">詳細</span>
+                </button>
+                <button class="nav-item active" onclick="showStatistics()">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-label">統計</span>
+                </button>
+                <button class="nav-item" onclick="showSettings()">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">設定</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Amount Input Modal -->
+    <div id="amountModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">記錄輸贏</h3>
+                <button class="modal-close" onclick="closeAmountModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">金額 (正數為贏，負數為輸)</label>
+                    <input type="number" id="amountInput" class="form-control" placeholder="輸入整數金額">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeAmountModal()">取消</button>
+                    <button class="btn btn--primary" onclick="confirmAmount()">確認</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Record Modal -->
+    <div id="editRecordModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="editModalTitle">編輯記錄</h3>
+                <button class="modal-close" onclick="closeEditRecordModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">金額 (正數為贏，負數為輸)</label>
+                    <input type="number" id="editAmountInput" class="form-control" placeholder="輸入整數金額">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeEditRecordModal()">取消</button>
+                    <button class="btn btn--primary" onclick="confirmEditRecord()">確認修改</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Player Modal -->
+    <div id="addPlayerModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>添加新玩家</h3>
+                <button class="modal-close" onclick="closeAddPlayerModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">玩家名稱</label>
+                    <input type="text" id="newPlayerNameInput" class="form-control" placeholder="輸入玩家名稱" maxlength="20">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeAddPlayerModal()">取消</button>
+                    <button class="btn btn--primary" onclick="confirmAddPlayer()">確認</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Toast -->
+    <div id="successToast" class="toast hidden">
+        <span id="toastMessage">操作成功</span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
