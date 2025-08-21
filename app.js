@@ -1,4 +1,509 @@
-// Enhanced Game State Management with Multi-Game Support
+// Enhanced Game State Management with Google Drive API Integration
+
+// Google Drive API Configuration
+const GOOGLE_CONFIG = {
+    apiKey: 'YOUR_GOOGLE_DRIVE_API_KEY', // 用戶需要替換
+    clientId: 'YOUR_GOOGLE_CLIENT_ID', // 用戶需要替換
+    discoveryDoc: 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
+    scopes: 'https://www.googleapis.com/auth/drive.file',
+    appName: 'Gambling Scorekeeper'
+};
+
+// Google Drive Manager Class
+class GoogleDriveManager {
+    constructor() {
+        this.isSignedIn = false;
+        this.currentUser = null;
+        this.appFolderId = null;
+        this.isInitialized = false;
+        this.authInstance = null;
+        this.retryAttempts = 0;
+        this.maxRetries = 3;
+        this.retryDelay = 5000;
+    }
+
+    async initialize() {
+        try {
+            if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId || 
+                GOOGLE_CONFIG.apiKey === 'YOUR_GOOGLE_DRIVE_API_KEY' || 
+                GOOGLE_CONFIG.clientId === 'YOUR_GOOGLE_CLIENT_ID') {
+                console.log('Google Drive API credentials not configured');
+                this.updateAuthUI();
+                return false;
+            }
+
+            // Check if gapi is available
+            if (typeof gapi === 'undefined') {
+                console.log('Google API not loaded');
+                this.updateAuthUI();
+                return false;
+            }
+
+            // Initialize Google API
+            await new Promise((resolve) => {
+                gapi.load('client:auth2', resolve);
+            });
+
+            await gapi.client.init({
+                apiKey: GOOGLE_CONFIG.apiKey,
+                clientId: GOOGLE_CONFIG.clientId,
+                discoveryDocs: [GOOGLE_CONFIG.discoveryDoc],
+                scope: GOOGLE_CONFIG.scopes
+            });
+
+            this.authInstance = gapi.auth2.getAuthInstance();
+            this.isSignedIn = this.authInstance.isSignedIn.get();
+            
+            if (this.isSignedIn) {
+                this.currentUser = this.authInstance.currentUser.get();
+                await this.ensureAppFolder();
+            }
+
+            this.updateAuthUI();
+            this.isInitialized = true;
+            
+            console.log('Google Drive API initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('Failed to initialize Google Drive API:', error);
+            this.handleSyncError(error);
+            this.updateAuthUI();
+            return false;
+        }
+    }
+
+    async signIn() {
+        try {
+            if (!this.isInitialized) {
+                const initialized = await this.initialize();
+                if (!initialized) {
+                    showToast('Google Drive API 未正確配置', 'error');
+                    return false;
+                }
+            }
+
+            const user = await this.authInstance.signIn();
+            this.isSignedIn = true;
+            this.currentUser = user;
+            
+            await this.ensureAppFolder();
+            this.updateAuthUI();
+            
+            // Auto-sync after sign in
+            await this.downloadAndMergeGameData();
+            
+            showToast('Google Drive 登入成功');
+            return true;
+        } catch (error) {
+            console.error('Google sign in failed:', error);
+            showToast('Google Drive 登入失敗', 'error');
+            return false;
+        }
+    }
+
+    async signOut() {
+        try {
+            if (this.authInstance) {
+                await this.authInstance.signOut();
+            }
+            this.isSignedIn = false;
+            this.currentUser = null;
+            this.appFolderId = null;
+            
+            this.updateAuthUI();
+            showToast('已登出 Google Drive');
+            
+            // Stop auto sync
+            if (autoSync && autoSync.isRunning) {
+                autoSync.stop();
+            }
+        } catch (error) {
+            console.error('Google sign out failed:', error);
+            showToast('登出失敗', 'error');
+        }
+    }
+
+    updateAuthUI() {
+        const signInButton = document.getElementById('googleSignInButton');
+        const userInfo = document.getElementById('googleUserInfo');
+        const userName = document.getElementById('googleUserName');
+        const userEmail = document.getElementById('googleUserEmail');
+        const userAvatar = document.getElementById('userAvatar');
+
+        if (!signInButton || !userInfo) return;
+
+        if (this.isSignedIn && this.currentUser) {
+            const profile = this.currentUser.getBasicProfile();
+            
+            signInButton.classList.add('hidden');
+            userInfo.classList.remove('hidden');
+            
+            if (userName) userName.textContent = profile.getName();
+            if (userEmail) userEmail.textContent = profile.getEmail();
+            if (userAvatar) userAvatar.src = profile.getImageUrl();
+            
+            // Start auto sync
+            if (autoSync && !autoSync.isRunning) {
+                autoSync.start();
+            }
+        } else {
+            signInButton.classList.remove('hidden');
+            userInfo.classList.add('hidden');
+        }
+        
+        updateSyncStatus();
+    }
+
+    async ensureAppFolder() {
+        try {
+            const response = await gapi.client.drive.files.list({
+                q: `name='${GOOGLE_CONFIG.appName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+                spaces: 'drive'
+            });
+
+            if (response.result.files.length > 0) {
+                this.appFolderId = response.result.files[0].id;
+                console.log('Found existing app folder:', this.appFolderId);
+            } else {
+                const folderResponse = await gapi.client.drive.files.create({
+                    resource: {
+                        name: GOOGLE_CONFIG.appName,
+                        mimeType: 'application/vnd.google-apps.folder'
+                    }
+                });
+                
+                this.appFolderId = folderResponse.result.id;
+                console.log('Created new app folder:', this.appFolderId);
+            }
+        } catch (error) {
+            console.error('Failed to ensure app folder:', error);
+            throw error;
+        }
+    }
+
+    async uploadGameData(gameData) {
+        if (!this.isSignedIn || !this.appFolderId) {
+            throw new Error('Not authenticated or app folder not found');
+        }
+
+        try {
+            const fileName = 'games-data.json';
+            const metadata = {
+                name: fileName,
+                parents: [this.appFolderId]
+            };
+
+            const dataToUpload = {
+                metadata: {
+                    version: '2.0',
+                    appName: GOOGLE_CONFIG.appName,
+                    lastSync: new Date().toISOString(),
+                    deviceId: this.getDeviceId(),
+                    userId: this.currentUser.getBasicProfile().getEmail()
+                },
+                gameManager: gameData
+            };
+
+            // Check if file already exists
+            const existingFiles = await gapi.client.drive.files.list({
+                q: `name='${fileName}' and parents in '${this.appFolderId}' and trashed=false`,
+                spaces: 'drive'
+            });
+
+            const boundary = '-------314159265358979323846';
+            const delimiter = "\r\n--" + boundary + "\r\n";
+            const close_delim = "\r\n--" + boundary + "--";
+
+            const multipartRequestBody =
+                delimiter +
+                'Content-Type: application/json\r\n\r\n' +
+                JSON.stringify(metadata) +
+                delimiter +
+                'Content-Type: application/json\r\n\r\n' +
+                JSON.stringify(dataToUpload, null, 2) +
+                close_delim;
+
+            let url = 'https://www.googleapis.com/upload/drive/v3/files';
+            if (existingFiles.result.files.length > 0) {
+                url += '/' + existingFiles.result.files[0].id;
+            }
+
+            const response = await gapi.client.request({
+                path: url,
+                method: existingFiles.result.files.length > 0 ? 'PATCH' : 'POST',
+                params: {'uploadType': 'multipart'},
+                headers: {
+                    'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+                },
+                body: multipartRequestBody
+            });
+
+            cloudConfig.lastSyncTime = new Date().toISOString();
+            console.log('Game data uploaded successfully:', response.result);
+            return response.result;
+        } catch (error) {
+            console.error('Failed to upload game data:', error);
+            throw error;
+        }
+    }
+
+    async downloadGameData() {
+        if (!this.isSignedIn || !this.appFolderId) {
+            throw new Error('Not authenticated or app folder not found');
+        }
+
+        try {
+            const fileName = 'games-data.json';
+            const response = await gapi.client.drive.files.list({
+                q: `name='${fileName}' and parents in '${this.appFolderId}' and trashed=false`,
+                spaces: 'drive'
+            });
+
+            if (response.result.files.length === 0) {
+                console.log('No game data found in Google Drive');
+                return null;
+            }
+
+            const fileId = response.result.files[0].id;
+            const fileContent = await gapi.client.drive.files.get({
+                fileId: fileId,
+                alt: 'media'
+            });
+
+            const gameData = JSON.parse(fileContent.body);
+            console.log('Game data downloaded successfully');
+            return gameData;
+        } catch (error) {
+            console.error('Failed to download game data:', error);
+            throw error;
+        }
+    }
+
+    async downloadAndMergeGameData() {
+        try {
+            showSyncProgress('正在下載雲端數據...', 25);
+            
+            const cloudData = await this.downloadGameData();
+            if (!cloudData || !cloudData.gameManager) {
+                showSyncProgress('', 0);
+                return;
+            }
+
+            showSyncProgress('正在合併數據...', 75);
+
+            // Check for conflicts
+            const hasConflicts = this.detectConflicts(gameManager, cloudData.gameManager);
+            
+            if (hasConflicts) {
+                showSyncProgress('', 0);
+                this.showConflictResolution(gameManager, cloudData.gameManager);
+                return;
+            }
+
+            // Merge data
+            const mergedData = this.mergeGameData(gameManager, cloudData.gameManager);
+            gameManager = mergedData;
+
+            showSyncProgress('同步完成', 100);
+            setTimeout(() => showSyncProgress('', 0), 1000);
+
+            updateGamesList();
+            updateGamesSelectionList();
+            showToast('雲端數據同步成功');
+        } catch (error) {
+            showSyncProgress('', 0);
+            this.handleSyncError(error);
+        }
+    }
+
+    detectConflicts(localData, cloudData) {
+        if (!localData.games || !cloudData.games) return false;
+
+        for (const gameId in localData.games) {
+            if (cloudData.games[gameId]) {
+                const localGame = localData.games[gameId];
+                const cloudGame = cloudData.games[gameId];
+                
+                const localTime = new Date(localGame.lastModified);
+                const cloudTime = new Date(cloudGame.lastModified);
+                
+                // Consider conflict if both have been modified and difference is less than 1 minute
+                if (Math.abs(localTime - cloudTime) > 60000 && localTime > cloudTime) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    mergeGameData(localData, cloudData) {
+        const merged = { ...localData };
+        
+        if (!cloudData.games) return merged;
+
+        for (const gameId in cloudData.games) {
+            if (!merged.games[gameId]) {
+                // Game only exists in cloud
+                merged.games[gameId] = cloudData.games[gameId];
+            } else {
+                // Game exists in both, use the one with later modification time
+                const localTime = new Date(merged.games[gameId].lastModified);
+                const cloudTime = new Date(cloudData.games[gameId].lastModified);
+                
+                if (cloudTime > localTime) {
+                    merged.games[gameId] = cloudData.games[gameId];
+                }
+            }
+        }
+
+        return merged;
+    }
+
+    showConflictResolution(localData, cloudData) {
+        const modal = document.getElementById('conflictModal');
+        const localInfo = document.getElementById('localVersionInfo');
+        const cloudInfo = document.getElementById('cloudVersionInfo');
+
+        if (localInfo) {
+            const localTime = this.getLatestModificationTime(localData);
+            localInfo.textContent = `最後修改：${formatDateTime(localTime)}`;
+        }
+
+        if (cloudInfo) {
+            const cloudTime = this.getLatestModificationTime(cloudData);
+            cloudInfo.textContent = `最後修改：${formatDateTime(cloudTime)}`;
+        }
+
+        window.conflictData = { local: localData, cloud: cloudData };
+        
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    getLatestModificationTime(data) {
+        if (!data.games) return new Date().toISOString();
+        
+        let latest = new Date(0);
+        for (const gameId in data.games) {
+            const gameTime = new Date(data.games[gameId].lastModified);
+            if (gameTime > latest) {
+                latest = gameTime;
+            }
+        }
+        return latest.toISOString();
+    }
+
+    async syncWithCloud() {
+        if (!this.isSignedIn) {
+            showToast('請先登入 Google Drive', 'warning');
+            return;
+        }
+
+        try {
+            showSyncProgress('正在上傳數據...', 50);
+            await this.uploadGameData(gameManager);
+            showSyncProgress('同步完成', 100);
+            setTimeout(() => showSyncProgress('', 0), 1000);
+            showToast('雲端同步成功');
+            return true;
+        } catch (error) {
+            showSyncProgress('', 0);
+            this.handleSyncError(error);
+            return false;
+        }
+    }
+
+    handleSyncError(error) {
+        console.error('Sync error:', error);
+        
+        if (error.status === 401) {
+            // Re-authenticate
+            showToast('認證已過期，請重新登入', 'warning');
+            this.signOut();
+        } else if (error.status === 403) {
+            showToast('Google Drive 配額超限，請稍後再試', 'warning');
+        } else if (error.status === 404) {
+            showToast('雲端檔案不存在，將創建新備份', 'info');
+        } else if (!navigator.onLine) {
+            showToast('網路連線中斷，將在恢復後自動同步', 'warning');
+            this.showOfflineMode();
+        } else {
+            showToast('同步失敗，請檢查網路連線', 'error');
+        }
+        
+        updateSyncStatus('error');
+    }
+
+    showOfflineMode() {
+        const indicator = document.getElementById('offlineIndicator');
+        if (indicator) {
+            indicator.classList.remove('hidden');
+        }
+    }
+
+    hideOfflineMode() {
+        const indicator = document.getElementById('offlineIndicator');
+        if (indicator) {
+            indicator.classList.add('hidden');
+        }
+    }
+
+    getDeviceId() {
+        let deviceId = null;
+        try {
+            deviceId = localStorage.getItem('deviceId');
+            if (!deviceId) {
+                deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('deviceId', deviceId);
+            }
+        } catch (e) {
+            deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+        }
+        return deviceId;
+    }
+}
+
+// Auto Sync Class
+class AutoSync {
+    constructor(interval = 300000) { // 5 minutes
+        this.interval = interval;
+        this.timer = null;
+        this.isRunning = false;
+    }
+
+    start() {
+        if (this.isRunning || !googleDriveManager.isSignedIn) return;
+        
+        this.isRunning = true;
+        this.timer = setInterval(async () => {
+            if (googleDriveManager.isSignedIn && gameManager.hasUnsavedChanges) {
+                console.log('Auto-syncing to Google Drive...');
+                const success = await googleDriveManager.syncWithCloud();
+                if (success) {
+                    gameManager.hasUnsavedChanges = false;
+                }
+            }
+        }, this.interval);
+        
+        console.log('Auto-sync started');
+    }
+
+    stop() {
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
+        this.isRunning = false;
+        console.log('Auto-sync stopped');
+    }
+}
+
+// Initialize Google Drive Manager and Auto Sync
+const googleDriveManager = new GoogleDriveManager();
+const autoSync = new AutoSync();
+
+// Game State Management
 let gameManager = {
     games: {
         'game_20250821_001': {
@@ -13,6 +518,9 @@ let gameManager = {
             lockHolder: null,
             playerCount: 4,
             roundCount: 8,
+            cloudFileId: null,
+            lastCloudSync: null,
+            syncStatus: 'pending',
             gameData: {
                 players: [
                     {id: 1, name: 'John', totalWinLoss: 150, bankerRounds: 2},
@@ -30,17 +538,47 @@ let gameManager = {
                 gameCreatedAt: '2025-08-21T08:58:00.000Z',
                 lastModified: '2025-08-21T08:58:00.000Z'
             }
+        },
+        'game_20250821_002': {
+            id: 'game_20250821_002',
+            name: '週末德州撲克',
+            creator: 'Alice',
+            createdAt: '2025-08-21T10:30:00.000Z',
+            lastModified: '2025-08-21T10:30:00.000Z',
+            lastEditor: 'Alice',
+            isLocked: true,
+            lockExpiry: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+            lockHolder: 'Alice',
+            playerCount: 6,
+            roundCount: 12,
+            cloudFileId: null,
+            lastCloudSync: null,
+            syncStatus: 'pending',
+            gameData: {
+                players: [],
+                currentRound: 1,
+                currentBankerId: null,
+                defaultBankerRounds: 3,
+                customBankerRounds: 3,
+                rounds: [],
+                gameStarted: false,
+                nextPlayerId: 1,
+                gameCreatedAt: '2025-08-21T10:30:00.000Z',
+                lastModified: '2025-08-21T10:30:00.000Z'
+            }
         }
     },
     currentGameId: null,
-    currentUser: 'John'
+    currentUser: 'John',
+    hasUnsavedChanges: false
 };
 
 let cloudConfig = {
     provider: 'googledrive',
-    autoSyncInterval: 300000, // 5 minutes
-    lastSyncTime: new Date(Date.now() - 3 * 60 * 1000).toISOString(), // 3 minutes ago
-    syncEnabled: true
+    autoSyncInterval: 300000,
+    lastSyncTime: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+    syncEnabled: true,
+    isConfigured: false
 };
 
 // Current game state (for backward compatibility)
@@ -48,6 +586,198 @@ let gameState = null;
 let currentScreen = 'welcome';
 let currentRecordingPlayerId = null;
 let editingRecord = { roundNumber: null, playerId: null };
+
+// Google Drive API Functions
+async function signInGoogle() {
+    if (!GOOGLE_CONFIG.apiKey || GOOGLE_CONFIG.apiKey === 'YOUR_GOOGLE_DRIVE_API_KEY') {
+        showToast('請先配置 Google Drive API', 'warning');
+        showApiConfigModal();
+        return;
+    }
+    
+    const success = await googleDriveManager.signIn();
+    if (success) {
+        updateSyncStatus('success');
+    }
+}
+
+async function signOutGoogle() {
+    await googleDriveManager.signOut();
+    updateSyncStatus('offline');
+}
+
+async function manualSyncWithCloud() {
+    if (!googleDriveManager.isSignedIn) {
+        showToast('請先登入 Google Drive', 'warning');
+        return;
+    }
+    
+    updateCloudSyncStatus('syncing');
+    const success = await googleDriveManager.syncWithCloud();
+    updateCloudSyncStatus(success ? 'success' : 'error');
+}
+
+function updateCloudSyncStatus(status = 'success') {
+    const element = document.getElementById('cloudSyncStatus');
+    const textElement = document.getElementById('cloudSyncText');
+    
+    if (!element || !textElement) return;
+    
+    element.className = 'cloud-sync-status';
+    
+    if (status === 'syncing') {
+        element.classList.add('syncing');
+        textElement.textContent = '正在同步雲端...';
+    } else if (status === 'error') {
+        element.classList.add('error');
+        textElement.textContent = '雲端同步失敗';
+    } else {
+        const lastSync = new Date(cloudConfig.lastSyncTime);
+        const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+        textElement.textContent = googleDriveManager.isSignedIn ? 
+            (minutesAgo < 1 ? '雲端已同步' : `${minutesAgo}分鐘前同步`) : 
+            '未登入Google Drive';
+    }
+}
+
+function showSyncProgress(text, percentage) {
+    const progressDiv = document.getElementById('syncProgress');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    
+    if (!progressDiv) return;
+    
+    if (text && percentage > 0) {
+        progressDiv.style.display = 'block';
+        if (progressFill) progressFill.style.width = percentage + '%';
+        if (progressText) progressText.textContent = text;
+    } else {
+        progressDiv.style.display = 'none';
+    }
+}
+
+// API Configuration Functions
+function showApiConfigModal() {
+    const modal = document.getElementById('apiConfigModal');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const clientIdInput = document.getElementById('clientIdInput');
+    
+    // Load existing config
+    try {
+        if (apiKeyInput) apiKeyInput.value = localStorage.getItem('googleApiKey') || '';
+        if (clientIdInput) clientIdInput.value = localStorage.getItem('googleClientId') || '';
+    } catch (e) {
+        console.log('Unable to load saved config');
+    }
+    
+    if (modal) {
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            if (apiKeyInput) apiKeyInput.focus();
+        }, 100);
+    }
+}
+
+function closeApiConfigModal() {
+    const modal = document.getElementById('apiConfigModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+async function saveApiConfig() {
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const clientIdInput = document.getElementById('clientIdInput');
+    
+    const apiKey = apiKeyInput?.value.trim();
+    const clientId = clientIdInput?.value.trim();
+    
+    if (!apiKey || !clientId) {
+        showToast('請填入所有必要的配置', 'error');
+        return;
+    }
+    
+    // Save to localStorage
+    try {
+        localStorage.setItem('googleApiKey', apiKey);
+        localStorage.setItem('googleClientId', clientId);
+    } catch (e) {
+        console.log('Unable to save to localStorage');
+    }
+    
+    // Update config
+    GOOGLE_CONFIG.apiKey = apiKey;
+    GOOGLE_CONFIG.clientId = clientId;
+    
+    cloudConfig.isConfigured = true;
+    
+    closeApiConfigModal();
+    
+    // Re-initialize Google Drive
+    googleDriveManager.isInitialized = false;
+    await googleDriveManager.initialize();
+    
+    showToast('Google Drive API 配置已保存');
+}
+
+// Conflict Resolution Functions
+function resolveConflict(choice) {
+    if (!window.conflictData) return;
+    
+    if (choice === 'local') {
+        // Keep local data, upload to cloud
+        googleDriveManager.syncWithCloud();
+        showToast('已保留本地版本並上傳至雲端');
+    } else if (choice === 'cloud') {
+        // Use cloud data
+        gameManager = window.conflictData.cloud;
+        updateGamesList();
+        updateGamesSelectionList();
+        showToast('已使用雲端版本');
+    }
+    
+    delete window.conflictData;
+    closeConflictModal();
+}
+
+function closeConflictModal() {
+    const modal = document.getElementById('conflictModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// Settings Functions
+function toggleGoogleDriveSync() {
+    const button = document.getElementById('googleDriveToggle');
+    if (!button) return;
+    
+    if (googleDriveManager.isSignedIn) {
+        signOutGoogle();
+    } else {
+        signInGoogle();
+    }
+}
+
+function updateGoogleDriveSettings() {
+    const toggleButton = document.getElementById('googleDriveToggle');
+    const lastSyncElement = document.getElementById('lastSyncTime');
+    
+    if (toggleButton) {
+        toggleButton.textContent = googleDriveManager.isSignedIn ? '停用' : '啟用';
+        toggleButton.className = googleDriveManager.isSignedIn ? 'btn btn--sm btn--secondary' : 'btn btn--sm btn--primary';
+    }
+    
+    if (lastSyncElement) {
+        if (googleDriveManager.isSignedIn && cloudConfig.lastSyncTime) {
+            const lastSync = new Date(cloudConfig.lastSyncTime);
+            const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+            lastSyncElement.textContent = minutesAgo < 1 ? '剛剛同步' : `${minutesAgo}分鐘前`;
+        } else {
+            lastSyncElement.textContent = '未同步';
+        }
+    }
+}
 
 // Utility Functions
 function generateGameId() {
@@ -120,6 +850,7 @@ function showGameManagement() {
     console.log('Showing game management screen');
     showScreen('gameManagementScreen');
     updateGamesList();
+    updateCloudSyncStatus();
 }
 
 function showGameList() {
@@ -157,11 +888,21 @@ function updateGamesList() {
     games.forEach(game => {
         const gameDiv = document.createElement('div');
         const locked = isGameLocked(game);
-        gameDiv.className = `game-card ${locked ? 'locked' : ''}`;
+        const syncing = game.syncStatus === 'syncing';
+        
+        gameDiv.className = `game-card ${locked ? 'locked' : ''} ${syncing ? 'syncing' : ''}`;
         gameDiv.onclick = () => selectGame(game.id);
+        
+        let statusText = '可編輯';
+        if (locked) {
+            statusText = `正被 ${game.lockHolder} 編輯中`;
+        } else if (syncing) {
+            statusText = '正在同步中';
+        }
         
         gameDiv.innerHTML = `
             ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
+            ${syncing ? '<div class="sync-indicator-card">☁️</div>' : ''}
             <div class="game-header">
                 <h3 class="game-title">${game.name}</h3>
             </div>
@@ -183,8 +924,8 @@ function updateGamesList() {
                     <span>${formatDate(game.lastModified)}</span>
                 </div>
             </div>
-            <div class="game-status ${locked ? 'locked' : 'available'}">
-                ${locked ? `正被 ${game.lockHolder} 編輯中` : '可編輯'}
+            <div class="game-status ${locked ? 'locked' : syncing ? 'syncing' : 'available'}">
+                ${statusText}
             </div>
         `;
         container.appendChild(gameDiv);
@@ -409,6 +1150,9 @@ function confirmCreateGame() {
         lockHolder: null,
         playerCount: 0,
         roundCount: 0,
+        cloudFileId: null,
+        lastCloudSync: null,
+        syncStatus: 'pending',
         gameData: {
             players: [],
             currentRound: 1,
@@ -435,15 +1179,7 @@ function confirmCreateGame() {
 
 // Cloud Sync Functions
 function syncWithCloud() {
-    updateSyncStatus('syncing');
-    
-    // Simulate cloud sync
-    setTimeout(() => {
-        cloudConfig.lastSyncTime = new Date().toISOString();
-        updateSyncStatus('success');
-        showToast('雲端同步成功');
-        autoSave();
-    }, 2000);
+    return manualSyncWithCloud();
 }
 
 function updateSyncStatus(status = 'success') {
@@ -460,6 +1196,9 @@ function updateSyncStatus(status = 'success') {
     } else if (status === 'error') {
         indicator.classList.add('error');
         statusText.textContent = '同步失敗';
+    } else if (!googleDriveManager.isSignedIn) {
+        indicator.classList.add('offline');
+        statusText.textContent = '未登入Google Drive';
     } else {
         const lastSync = new Date(cloudConfig.lastSyncTime);
         const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
@@ -477,16 +1216,13 @@ function autoSave() {
             currentGame.playerCount = gameState.players.length;
             currentGame.roundCount = gameState.rounds.length;
             currentGame.gameData = { ...gameState };
+            
+            // Mark as having unsaved changes
+            gameManager.hasUnsavedChanges = true;
         }
     }
     
     console.log('Game auto-saved');
-    
-    // Auto-sync to cloud every 5 minutes
-    const lastSync = new Date(cloudConfig.lastSyncTime);
-    if (Date.now() - lastSync.getTime() > cloudConfig.autoSyncInterval) {
-        syncWithCloud();
-    }
 }
 
 // Player Setup Functions
@@ -601,6 +1337,7 @@ function showSettings() {
     console.log('Showing settings screen');
     showScreen('settingsScreen');
     updateSettingsDisplay();
+    updateGoogleDriveSettings();
 }
 
 function updateSettingsDisplay() {
@@ -1322,6 +2059,30 @@ function showToast(message, type = 'success') {
     }
 }
 
+// Network Status Detection
+function detectOnlineStatus() {
+    function updateOnlineStatus() {
+        if (navigator.onLine) {
+            googleDriveManager.hideOfflineMode();
+            if (googleDriveManager.isSignedIn && autoSync && !autoSync.isRunning) {
+                autoSync.start();
+            }
+        } else {
+            googleDriveManager.showOfflineMode();
+            if (autoSync && autoSync.isRunning) {
+                autoSync.stop();
+            }
+        }
+        updateSyncStatus();
+    }
+
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    
+    // Check initial status
+    updateOnlineStatus();
+}
+
 // Event Listeners
 function initializeEventListeners() {
     console.log('Initializing event listeners...');
@@ -1333,7 +2094,9 @@ function initializeEventListeners() {
         { id: 'editAmountInput', action: confirmEditRecord },
         { id: 'newPlayerNameInput', action: confirmAddPlayer },
         { id: 'gameNameInput', action: confirmCreateGame },
-        { id: 'creatorNameInput', action: confirmCreateGame }
+        { id: 'creatorNameInput', action: confirmCreateGame },
+        { id: 'apiKeyInput', action: () => document.getElementById('clientIdInput')?.focus() },
+        { id: 'clientIdInput', action: saveApiConfig }
     ];
     
     inputs.forEach(({ id, action }) => {
@@ -1341,6 +2104,7 @@ function initializeEventListeners() {
         if (input) {
             input.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
+                    e.preventDefault();
                     action();
                 }
             });
@@ -1353,7 +2117,9 @@ function initializeEventListeners() {
         { id: 'amountModal', closeFunc: closeAmountModal },
         { id: 'editRecordModal', closeFunc: closeEditRecordModal },
         { id: 'addPlayerModal', closeFunc: closeAddPlayerModal },
-        { id: 'createGameModal', closeFunc: closeCreateGameModal }
+        { id: 'createGameModal', closeFunc: closeCreateGameModal },
+        { id: 'apiConfigModal', closeFunc: closeApiConfigModal },
+        { id: 'conflictModal', closeFunc: closeConflictModal }
     ];
     
     modals.forEach(({ id, closeFunc }) => {
@@ -1371,17 +2137,43 @@ function initializeEventListeners() {
     console.log('Event listeners initialized');
 }
 
-// Auto-sync timer
-setInterval(() => {
-    updateSyncStatus();
-    updateGameLockStatus();
-}, 60000); // Update every minute
-
 // Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app...');
+    
+    // Load saved API configuration
+    try {
+        const savedApiKey = localStorage.getItem('googleApiKey');
+        const savedClientId = localStorage.getItem('googleClientId');
+        
+        if (savedApiKey && savedClientId) {
+            GOOGLE_CONFIG.apiKey = savedApiKey;
+            GOOGLE_CONFIG.clientId = savedClientId;
+            cloudConfig.isConfigured = true;
+        }
+    } catch (e) {
+        console.log('Unable to load saved API config');
+    }
+    
     initializeEventListeners();
+    detectOnlineStatus();
+    
+    // Initialize Google Drive (but don't wait for it)
+    googleDriveManager.initialize().then(() => {
+        console.log('Google Drive initialization completed');
+    }).catch(error => {
+        console.log('Google Drive initialization failed:', error);
+    });
+    
     showWelcome();
+    
+    // Auto-sync timer
+    setInterval(() => {
+        updateSyncStatus();
+        updateGameLockStatus();
+        updateCloudSyncStatus();
+        updateGoogleDriveSettings();
+    }, 60000); // Update every minute
 });
 
-console.log('Enhanced script loaded with game management features');
+console.log('Enhanced script loaded with Google Drive API integration features');

@@ -3,27 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OldNo 8張記數系統</title>
+    <title>記數app - 升級版遊戲管理系統</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Google API Scripts -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body>
     <!-- Welcome Screen -->
     <div id="welcomeScreen" class="screen">
         <div class="container">
             <div class="welcome-content">
-                <h1 class="welcome-title">OldNo 8張記數系統</h1>
-                <p class="welcome-subtitle">OldNo 8張記數系統</p>
+                <h1 class="welcome-title">記數app</h1>
+                <p class="welcome-subtitle">升級版多遊戲管理系統</p>
+                
+                <!-- Google Authentication Section -->
+                <div class="google-auth-section">
+                    <div id="googleSignInButton" class="google-signin-container hidden">
+                        <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
+                            <span class="google-icon">G</span>
+                            使用Google帳號登入
+                        </button>
+                    </div>
+                    <div id="googleUserInfo" class="google-user-info hidden">
+                        <div class="user-avatar-container">
+                            <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
+                            <div class="user-details">
+                                <span class="user-name">已登入: <span id="googleUserName"></span></span>
+                                <span class="user-email" id="googleUserEmail"></span>
+                            </div>
+                        </div>
+                        <button class="btn btn--secondary btn--sm" onclick="signOutGoogle()">登出</button>
+                    </div>
+                </div>
+
                 <div class="sync-status" id="syncStatus">
                     <span class="sync-indicator" id="syncIndicator">
                         <span class="sync-icon">☁️</span>
-                        <span id="syncStatusText">已同步</span>
+                        <span id="syncStatusText">未登入Google Drive</span>
                     </span>
                 </div>
+                
                 <div class="welcome-actions">
                     <button class="btn btn--primary btn--lg btn--full-width" onclick="showGameManagement()">管理遊戲</button>
                     <button class="btn btn--secondary btn--lg btn--full-width" onclick="createNewGame()">創建新遊戲</button>
                     <button class="btn btn--outline btn--lg btn--full-width" onclick="showGameList()">選擇現有遊戲</button>
+                </div>
+
+                <div class="api-config-notice">
+                    <p class="config-warning">⚠️ 需要配置Google Drive API金鑰才能使用雲端同步功能</p>
+                    <button class="btn btn--outline btn--sm" onclick="showApiConfigModal()">配置API</button>
                 </div>
             </div>
         </div>
@@ -35,11 +65,14 @@
             <div class="header">
                 <button class="btn-back" onclick="showWelcome()">← 返回</button>
                 <h2>遊戲管理</h2>
-                <button class="btn-settings" onclick="syncWithCloud()">☁️</button>
+                <button class="btn-settings" onclick="manualSyncWithCloud()">☁️</button>
+            </div>
+            <div class="cloud-sync-status" id="cloudSyncStatus">
+                <span id="cloudSyncText">雲端同步狀態</span>
             </div>
             <div class="game-actions">
                 <button class="btn btn--primary btn--full-width" onclick="createNewGame()">創建新遊戲</button>
-                <button class="btn btn--secondary btn--full-width" onclick="syncWithCloud()">同步雲端</button>
+                <button class="btn btn--secondary btn--full-width" onclick="manualSyncWithCloud()">手動同步雲端</button>
             </div>
             <div id="gamesList" class="games-list">
                 <!-- Games will be dynamically generated here -->
@@ -100,6 +133,16 @@
             <div class="settings-content">
                 <div class="setting-item">
                     <div class="setting-info">
+                        <div class="setting-title">Google Drive 同步</div>
+                        <div class="setting-description">自動同步遊戲數據到雲端</div>
+                    </div>
+                    <div class="google-drive-controls">
+                        <button id="googleDriveToggle" class="btn btn--sm" onclick="toggleGoogleDriveSync()">啟用</button>
+                        <span id="lastSyncTime" class="last-sync-time"></span>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
                         <div class="setting-title">莊家輪數</div>
                         <div class="setting-description">每位玩家當莊家的輪數</div>
                     </div>
@@ -151,6 +194,12 @@
                     </div>
                 </div>
                 <div class="game-lock-status" id="gameLockStatus"></div>
+                <div class="sync-progress" id="syncProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <span class="progress-text" id="progressText">正在同步...</span>
+                </div>
                 <div class="player-record-list" id="playerRecordList"></div>
                 <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪</button>
             </div>
@@ -282,6 +331,41 @@
         </div>
     </div>
 
+    <!-- API Configuration Modal -->
+    <div id="apiConfigModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Google Drive API 配置</h3>
+                <button class="modal-close" onclick="closeApiConfigModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-instructions">
+                    <h4>配置步驟：</h4>
+                    <ol>
+                        <li>前往 <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                        <li>創建新專案或選擇現有專案</li>
+                        <li>啟用 Google Drive API</li>
+                        <li>創建憑證（API金鑰和OAuth 2.0用戶端ID）</li>
+                        <li>設定授權的JavaScript來源網域</li>
+                        <li>將憑證填入下方欄位</li>
+                    </ol>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API 金鑰</label>
+                    <input type="text" id="apiKeyInput" class="form-control" placeholder="輸入您的Google Drive API金鑰">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">OAuth 2.0 用戶端ID</label>
+                    <input type="text" id="clientIdInput" class="form-control" placeholder="輸入您的OAuth 2.0用戶端ID">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeApiConfigModal()">取消</button>
+                    <button class="btn btn--primary" onclick="saveApiConfig()">保存配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Amount Input Modal -->
     <div id="amountModal" class="modal hidden">
         <div class="modal-content">
@@ -342,9 +426,42 @@
         </div>
     </div>
 
+    <!-- Conflict Resolution Modal -->
+    <div id="conflictModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>數據衝突解決</h3>
+                <button class="modal-close" onclick="closeConflictModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>檢測到本地和雲端數據存在衝突，請選擇要保留的版本：</p>
+                <div class="conflict-options">
+                    <div class="conflict-option">
+                        <h4>本地版本</h4>
+                        <p id="localVersionInfo">最後修改：--</p>
+                        <button class="btn btn--outline btn--full-width" onclick="resolveConflict('local')">保留本地版本</button>
+                    </div>
+                    <div class="conflict-option">
+                        <h4>雲端版本</h4>
+                        <p id="cloudVersionInfo">最後修改：--</p>
+                        <button class="btn btn--outline btn--full-width" onclick="resolveConflict('cloud')">保留雲端版本</button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeConflictModal()">稍後決定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Success Toast -->
     <div id="successToast" class="toast hidden">
         <span id="toastMessage">操作成功</span>
+    </div>
+
+    <!-- Offline Indicator -->
+    <div id="offlineIndicator" class="offline-indicator hidden">
+        <span>⚠️ 離線模式 - 數據將在網路恢復後同步</span>
     </div>
 
     <script src="app.js"></script>
