@@ -30,31 +30,6 @@ let gameManager = {
                 gameCreatedAt: '2025-08-21T08:58:00.000Z',
                 lastModified: '2025-08-21T08:58:00.000Z'
             }
-        },
-        'game_20250821_002': {
-            id: 'game_20250821_002',
-            name: '週末德州撲克',
-            creator: 'Alice',
-            createdAt: '2025-08-21T10:30:00.000Z',
-            lastModified: '2025-08-21T10:30:00.000Z',
-            lastEditor: 'Alice',
-            isLocked: true,
-            lockExpiry: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes from now
-            lockHolder: 'Alice',
-            playerCount: 6,
-            roundCount: 12,
-            gameData: {
-                players: [],
-                currentRound: 1,
-                currentBankerId: null,
-                defaultBankerRounds: 3,
-                customBankerRounds: 3,
-                rounds: [],
-                gameStarted: false,
-                nextPlayerId: 1,
-                gameCreatedAt: '2025-08-21T10:30:00.000Z',
-                lastModified: '2025-08-21T10:30:00.000Z'
-            }
         }
     },
     currentGameId: null,
