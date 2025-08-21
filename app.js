@@ -1,23 +1,108 @@
-// Game State Management
-let gameState = {
-    players: [],
-    currentRound: 1,
-    currentBankerId: null,
-    defaultBankerRounds: 3,
-    customBankerRounds: 3,
-    rounds: [],
-    gameStarted: false,
-    nextPlayerId: 1,
-    gameCreatedAt: null,
-    lastModified: null
+// Enhanced Game State Management with Multi-Game Support
+let gameManager = {
+    games: {
+        'game_20250821_001': {
+            id: 'game_20250821_001',
+            name: '週五麻將局',
+            creator: 'John',
+            createdAt: '2025-08-21T08:58:00.000Z',
+            lastModified: '2025-08-21T08:58:00.000Z',
+            lastEditor: 'John',
+            isLocked: false,
+            lockExpiry: null,
+            lockHolder: null,
+            playerCount: 4,
+            roundCount: 8,
+            gameData: {
+                players: [
+                    {id: 1, name: 'John', totalWinLoss: 150, bankerRounds: 2},
+                    {id: 2, name: 'Mary', totalWinLoss: -50, bankerRounds: 2},
+                    {id: 3, name: 'Peter', totalWinLoss: -80, bankerRounds: 2},
+                    {id: 4, name: 'Lisa', totalWinLoss: -20, bankerRounds: 2}
+                ],
+                currentRound: 9,
+                currentBankerId: null,
+                defaultBankerRounds: 3,
+                customBankerRounds: 3,
+                rounds: [],
+                gameStarted: true,
+                nextPlayerId: 5,
+                gameCreatedAt: '2025-08-21T08:58:00.000Z',
+                lastModified: '2025-08-21T08:58:00.000Z'
+            }
+        },
+        'game_20250821_002': {
+            id: 'game_20250821_002',
+            name: '週末德州撲克',
+            creator: 'Alice',
+            createdAt: '2025-08-21T10:30:00.000Z',
+            lastModified: '2025-08-21T10:30:00.000Z',
+            lastEditor: 'Alice',
+            isLocked: true,
+            lockExpiry: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes from now
+            lockHolder: 'Alice',
+            playerCount: 6,
+            roundCount: 12,
+            gameData: {
+                players: [],
+                currentRound: 1,
+                currentBankerId: null,
+                defaultBankerRounds: 3,
+                customBankerRounds: 3,
+                rounds: [],
+                gameStarted: false,
+                nextPlayerId: 1,
+                gameCreatedAt: '2025-08-21T10:30:00.000Z',
+                lastModified: '2025-08-21T10:30:00.000Z'
+            }
+        }
+    },
+    currentGameId: null,
+    currentUser: 'John'
 };
 
+let cloudConfig = {
+    provider: 'googledrive',
+    autoSyncInterval: 300000, // 5 minutes
+    lastSyncTime: new Date(Date.now() - 3 * 60 * 1000).toISOString(), // 3 minutes ago
+    syncEnabled: true
+};
+
+// Current game state (for backward compatibility)
+let gameState = null;
 let currentScreen = 'welcome';
 let currentRecordingPlayerId = null;
 let editingRecord = { roundNumber: null, playerId: null };
 
+// Utility Functions
+function generateGameId() {
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `game_${timestamp}_${random}`;
+}
+
+function formatDateTime(isoString) {
+    return new Date(isoString).toLocaleString('zh-TW', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatDate(isoString) {
+    return new Date(isoString).toLocaleDateString('zh-TW');
+}
+
+function isGameLocked(game) {
+    if (!game.isLocked) return false;
+    if (!game.lockExpiry) return false;
+    return new Date() < new Date(game.lockExpiry);
+}
+
 // Screen Navigation
-window.showScreen = function(screenId) {
+function showScreen(screenId) {
     console.log('Showing screen:', screenId);
     const screens = document.querySelectorAll('.screen');
     screens.forEach(screen => {
@@ -33,9 +118,9 @@ window.showScreen = function(screenId) {
     }
     
     updateBottomNavigation();
-};
+}
 
-window.updateBottomNavigation = function() {
+function updateBottomNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => item.classList.remove('active'));
     
@@ -48,74 +133,161 @@ window.updateBottomNavigation = function() {
     } else if (currentScreen === 'settingsScreen') {
         navItems[3]?.classList.add('active');
     }
-};
+}
 
-window.showWelcome = function() {
+function showWelcome() {
     console.log('Showing welcome screen');
     showScreen('welcomeScreen');
-    updateContinueGameButton();
-};
+    updateSyncStatus();
+}
 
-window.showLoadGame = function() {
-    console.log('Showing load game screen');
-    showScreen('loadGameScreen');
-};
+function showGameManagement() {
+    console.log('Showing game management screen');
+    showScreen('gameManagementScreen');
+    updateGamesList();
+}
 
-window.showPlayerSetup = function() {
-    console.log('Showing player setup screen');
-    showScreen('playerSetupScreen');
-    updateBankerRoundsDisplay();
-    updatePlayerList();
-    updateConfirmButton();
-};
+function showGameList() {
+    console.log('Showing game list screen');
+    showScreen('gameListScreen');
+    updateGamesSelectionList();
+}
 
-window.showSettings = function() {
-    console.log('Showing settings screen');
-    showScreen('settingsScreen');
-    updateSettingsDisplay();
-};
-
-window.showBankerSelection = function() {
-    console.log('Showing banker selection screen');
-    showScreen('bankerSelectionScreen');
-    updateBankerList();
-    const currentRoundEl = document.getElementById('currentRoundNumber');
-    if (currentRoundEl) {
-        currentRoundEl.textContent = gameState.currentRound;
-    }
-};
-
-window.showRecord = function() {
-    console.log('Showing record screen');
-    showScreen('recordScreen');
-    updateRecordScreen();
-};
-
-window.showDetailedRecords = function() {
-    console.log('Showing detailed records screen');
-    showScreen('detailedRecordsScreen');
-    updateDetailedRecords();
-};
-
-window.showStatistics = function() {
-    console.log('Showing statistics screen');
-    showScreen('statisticsScreen');
-    updateStatistics();
-};
-
-window.goBackFromBankerSelection = function() {
-    if (gameState.rounds.length === 0) {
-        showPlayerSetup();
+function backToGameManagement() {
+    if (gameManager.currentGameId) {
+        showGameManagement();
     } else {
-        showRecord();
+        showWelcome();
     }
-};
+}
 
-window.goBackFromStatistics = function() {
-    showRecord();
-};
+// Game Management Functions
+function updateGamesList() {
+    const container = document.getElementById('gamesList');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const games = Object.values(gameManager.games);
+    if (games.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>尚無遊戲</h3>
+                <p>點擊「創建新遊戲」開始第一個遊戲</p>
+            </div>
+        `;
+        return;
+    }
+    
+    games.forEach(game => {
+        const gameDiv = document.createElement('div');
+        const locked = isGameLocked(game);
+        gameDiv.className = `game-card ${locked ? 'locked' : ''}`;
+        gameDiv.onclick = () => selectGame(game.id);
+        
+        gameDiv.innerHTML = `
+            ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
+            <div class="game-header">
+                <h3 class="game-title">${game.name}</h3>
+            </div>
+            <div class="game-meta">
+                <div class="game-meta-item">
+                    <span class="meta-label">創建者</span>
+                    <span>${game.creator}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">玩家數</span>
+                    <span>${game.playerCount} 人</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">創建時間</span>
+                    <span>${formatDate(game.createdAt)}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">最後修改</span>
+                    <span>${formatDate(game.lastModified)}</span>
+                </div>
+            </div>
+            <div class="game-status ${locked ? 'locked' : 'available'}">
+                ${locked ? `正被 ${game.lockHolder} 編輯中` : '可編輯'}
+            </div>
+        `;
+        container.appendChild(gameDiv);
+    });
+}
 
-window.goBackFromSettings = function() {
+function updateGamesSelectionList() {
+    const container = document.getElementById('gamesSelectionList');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const games = Object.values(gameManager.games);
+    if (games.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>尚無遊戲</h3>
+                <p>返回首頁創建您的第一個遊戲</p>
+            </div>
+        `;
+        return;
+    }
+    
+    games.forEach(game => {
+        const gameDiv = document.createElement('div');
+        const locked = isGameLocked(game);
+        gameDiv.className = `game-card ${locked ? 'locked' : ''}`;
+        gameDiv.onclick = () => {
+            if (locked) {
+                showToast(`遊戲正被 ${game.lockHolder} 編輯中，請稍後再試`, 'warning');
+                return;
+            }
+            selectAndStartGame(game.id);
+        };
+        
+        gameDiv.innerHTML = `
+            ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
+            <div class="game-header">
+                <h3 class="game-title">${game.name}</h3>
+            </div>
+            <div class="game-meta">
+                <div class="game-meta-item">
+                    <span class="meta-label">創建者</span>
+                    <span>${game.creator}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">輪數</span>
+                    <span>${game.roundCount} 輪</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">創建時間</span>
+                    <span>${formatDate(game.createdAt)}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">最後修改</span>
+                    <span>${formatDate(game.lastModified)}</span>
+                </div>
+            </div>
+            <div class="game-status ${locked ? 'locked' : 'available'}">
+                ${locked ? `正被 ${game.lockHolder} 編輯中` : '點擊繼續遊戲'}
+            </div>
+        `;
+        container.appendChild(gameDiv);
+    });
+}
+
+function selectGame(gameId) {
+    const game = gameManager.games[gameId];
+    if (!game) return;
+    
+    if (isGameLocked(game)) {
+        showToast(`遊戲正被 ${game.lockHolder} 編輯中，請稍後再試`, 'warning');
+        return;
+    }
+    
+    gameManager.currentGameId = gameId;
+    gameState = game.gameData;
+    
     if (gameState.gameStarted && gameState.rounds.length > 0) {
         showRecord();
     } else if (gameState.gameStarted) {
@@ -123,70 +295,265 @@ window.goBackFromSettings = function() {
     } else {
         showPlayerSetup();
     }
-};
+    
+    acquireGameLock(gameId);
+}
 
-// Settings Management
-window.updateBankerRounds = function(rounds) {
-    gameState.customBankerRounds = parseInt(rounds);
-    gameState.defaultBankerRounds = parseInt(rounds);
-    updateBankerRoundsDisplay();
-    saveGameToStorage();
-};
+function selectAndStartGame(gameId) {
+    selectGame(gameId);
+}
 
-window.updateSettingsDisplay = function() {
-    const select = document.getElementById('bankerRoundsSelect');
-    if (select) {
-        select.value = gameState.customBankerRounds.toString();
+// Game Lock Management
+function acquireGameLock(gameId) {
+    const game = gameManager.games[gameId];
+    if (!game) return;
+    
+    if (isGameLocked(game) && game.lockHolder !== gameManager.currentUser) {
+        throw new Error(`遊戲正被 ${game.lockHolder} 編輯中`);
     }
-};
+    
+    game.isLocked = true;
+    game.lockExpiry = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes
+    game.lockHolder = gameManager.currentUser;
+    
+    autoSave();
+    updateGameLockStatus();
+    
+    // Auto-refresh lock every 10 minutes
+    setTimeout(() => {
+        if (gameManager.currentGameId === gameId && currentScreen !== 'welcome') {
+            refreshGameLock(gameId);
+        }
+    }, 10 * 60 * 1000);
+}
 
-window.updateBankerRoundsDisplay = function() {
-    const display = document.getElementById('currentBankerRounds');
-    if (display) {
-        display.textContent = gameState.customBankerRounds;
+function refreshGameLock(gameId) {
+    const game = gameManager.games[gameId];
+    if (!game || !game.isLocked || game.lockHolder !== gameManager.currentUser) return;
+    
+    game.lockExpiry = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    autoSave();
+    updateGameLockStatus();
+}
+
+function releaseGameLock(gameId) {
+    const game = gameManager.games[gameId];
+    if (!game) return;
+    
+    game.isLocked = false;
+    game.lockExpiry = null;
+    game.lockHolder = null;
+    
+    autoSave();
+}
+
+function updateGameLockStatus() {
+    const statusEl = document.getElementById('gameLockStatus');
+    if (!statusEl || !gameManager.currentGameId) return;
+    
+    const game = gameManager.games[gameManager.currentGameId];
+    if (!game) return;
+    
+    if (game.isLocked && game.lockHolder === gameManager.currentUser) {
+        const lockExpiry = new Date(game.lockExpiry);
+        const timeLeft = Math.floor((lockExpiry - new Date()) / 60000); // minutes
+        
+        statusEl.className = 'game-lock-status';
+        statusEl.innerHTML = `您正在編輯此遊戲 (${timeLeft} 分鐘後自動釋放)`;
+        statusEl.style.display = 'block';
+        
+        if (timeLeft <= 3) {
+            statusEl.className = 'game-lock-status warning';
+            statusEl.innerHTML = `注意：編輯權限將在 ${timeLeft} 分鐘後過期`;
+        }
+    } else {
+        statusEl.style.display = 'none';
     }
-};
+}
 
-window.updateContinueGameButton = function() {
-    const btn = document.getElementById('continueGameBtn');
-    if (btn) {
-        if (gameState.gameStarted && gameState.rounds.length > 0) {
-            btn.style.display = 'block';
-        } else {
-            btn.style.display = 'none';
+// Create Game Functions
+function createNewGame() {
+    const modal = document.getElementById('createGameModal');
+    const nameInput = document.getElementById('gameNameInput');
+    const creatorInput = document.getElementById('creatorNameInput');
+    
+    if (nameInput) nameInput.value = '';
+    if (creatorInput) creatorInput.value = gameManager.currentUser;
+    
+    if (modal) {
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            if (nameInput) nameInput.focus();
+        }, 100);
+    }
+}
+
+function closeCreateGameModal() {
+    const modal = document.getElementById('createGameModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function confirmCreateGame() {
+    const nameInput = document.getElementById('gameNameInput');
+    const creatorInput = document.getElementById('creatorNameInput');
+    
+    const gameName = nameInput?.value.trim();
+    const creatorName = creatorInput?.value.trim();
+    
+    if (!gameName) {
+        showToast('請輸入遊戲名稱', 'error');
+        return;
+    }
+    
+    if (!creatorName) {
+        showToast('請輸入創建者名稱', 'error');
+        return;
+    }
+    
+    // Check if game name already exists
+    const existingGame = Object.values(gameManager.games).find(g => g.name === gameName);
+    if (existingGame) {
+        showToast('遊戲名稱已存在', 'error');
+        return;
+    }
+    
+    const gameId = generateGameId();
+    const now = new Date().toISOString();
+    
+    const newGame = {
+        id: gameId,
+        name: gameName,
+        creator: creatorName,
+        createdAt: now,
+        lastModified: now,
+        lastEditor: creatorName,
+        isLocked: false,
+        lockExpiry: null,
+        lockHolder: null,
+        playerCount: 0,
+        roundCount: 0,
+        gameData: {
+            players: [],
+            currentRound: 1,
+            currentBankerId: null,
+            defaultBankerRounds: 3,
+            customBankerRounds: 3,
+            rounds: [],
+            gameStarted: false,
+            nextPlayerId: 1,
+            gameCreatedAt: now,
+            lastModified: now
+        }
+    };
+    
+    gameManager.games[gameId] = newGame;
+    gameManager.currentGameId = gameId;
+    gameState = newGame.gameData;
+    
+    autoSave();
+    closeCreateGameModal();
+    showPlayerSetup();
+    showToast('遊戲創建成功');
+}
+
+// Cloud Sync Functions
+function syncWithCloud() {
+    updateSyncStatus('syncing');
+    
+    // Simulate cloud sync
+    setTimeout(() => {
+        cloudConfig.lastSyncTime = new Date().toISOString();
+        updateSyncStatus('success');
+        showToast('雲端同步成功');
+        autoSave();
+    }, 2000);
+}
+
+function updateSyncStatus(status = 'success') {
+    const indicator = document.getElementById('syncIndicator');
+    const statusText = document.getElementById('syncStatusText');
+    
+    if (!indicator || !statusText) return;
+    
+    indicator.className = 'sync-indicator';
+    
+    if (status === 'syncing') {
+        indicator.classList.add('syncing');
+        statusText.textContent = '同步中...';
+    } else if (status === 'error') {
+        indicator.classList.add('error');
+        statusText.textContent = '同步失敗';
+    } else {
+        const lastSync = new Date(cloudConfig.lastSyncTime);
+        const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+        statusText.textContent = minutesAgo < 1 ? '剛剛同步' : `${minutesAgo}分鐘前同步`;
+    }
+}
+
+function autoSave() {
+    // Update game metadata
+    if (gameManager.currentGameId && gameState) {
+        const currentGame = gameManager.games[gameManager.currentGameId];
+        if (currentGame) {
+            currentGame.lastModified = new Date().toISOString();
+            currentGame.lastEditor = gameManager.currentUser;
+            currentGame.playerCount = gameState.players.length;
+            currentGame.roundCount = gameState.rounds.length;
+            currentGame.gameData = { ...gameState };
         }
     }
-};
-
-window.continueGame = function() {
-    if (gameState.gameStarted && gameState.rounds.length > 0) {
-        showRecord();
+    
+    console.log('Game auto-saved');
+    
+    // Auto-sync to cloud every 5 minutes
+    const lastSync = new Date(cloudConfig.lastSyncTime);
+    if (Date.now() - lastSync.getTime() > cloudConfig.autoSyncInterval) {
+        syncWithCloud();
     }
-};
+}
 
-// Player Management
-window.addPlayer = function() {
+// Player Setup Functions
+function showPlayerSetup() {
+    console.log('Showing player setup screen');
+    showScreen('playerSetupScreen');
+    updateCurrentGameTitle();
+    updateBankerRoundsDisplay();
+    updatePlayerList();
+    updateConfirmButton();
+}
+
+function updateCurrentGameTitle() {
+    const titleEl = document.getElementById('currentGameTitle');
+    if (titleEl && gameManager.currentGameId) {
+        const game = gameManager.games[gameManager.currentGameId];
+        titleEl.textContent = game ? game.name : '新遊戲';
+    }
+}
+
+function addPlayer() {
     console.log('Adding player...');
     const input = document.getElementById('playerNameInput');
-    if (!input) {
-        console.error('Player name input not found');
+    if (!input || !gameState) {
+        console.error('Player name input not found or no game state');
         return;
     }
     
     const name = input.value.trim();
     
     if (name === '') {
-        alert('請輸入玩家名稱');
+        showToast('請輸入玩家名稱', 'error');
         return;
     }
     
     if (gameState.players.some(player => player.name === name)) {
-        alert('玩家名稱已存在');
+        showToast('玩家名稱已存在', 'error');
         return;
     }
     
     if (gameState.players.length >= 20) {
-        alert('最多只能添加20位玩家');
+        showToast('最多只能添加20位玩家', 'error');
         return;
     }
     
@@ -201,20 +568,22 @@ window.addPlayer = function() {
     input.value = '';
     updatePlayerList();
     updateConfirmButton();
-    saveGameToStorage();
-};
+    autoSave();
+}
 
-window.removePlayer = function(playerId) {
+function removePlayer(playerId) {
+    if (!gameState) return;
+    
     console.log('Removing player:', playerId);
     gameState.players = gameState.players.filter(player => player.id !== playerId);
     updatePlayerList();
     updateConfirmButton();
-    saveGameToStorage();
-};
+    autoSave();
+}
 
-window.updatePlayerList = function() {
+function updatePlayerList() {
     const container = document.getElementById('playerList');
-    if (!container) return;
+    if (!container || !gameState) return;
     
     container.innerHTML = '';
     
@@ -227,35 +596,98 @@ window.updatePlayerList = function() {
         `;
         container.appendChild(playerDiv);
     });
-};
+}
 
-window.updateConfirmButton = function() {
+function updateConfirmButton() {
     const btn = document.getElementById('confirmPlayersBtn');
-    if (!btn) return;
+    if (!btn || !gameState) return;
     
     const canConfirm = gameState.players.length >= 2;
     btn.disabled = !canConfirm;
     btn.textContent = canConfirm ? `確認玩家 (${gameState.players.length}人)` : '確認玩家 (最少2人)';
-};
+}
 
-window.confirmPlayers = function() {
+function confirmPlayers() {
     console.log('Confirming players...');
-    if (gameState.players.length < 2) {
-        alert('至少需要2位玩家');
+    if (!gameState || gameState.players.length < 2) {
+        showToast('至少需要2位玩家', 'error');
         return;
     }
     
     gameState.gameStarted = true;
     gameState.gameCreatedAt = new Date().toISOString();
     gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
+    autoSave();
     showBankerSelection();
-};
+}
 
-// Banker Selection
-window.updateBankerList = function() {
+// Settings Functions
+function showSettings() {
+    console.log('Showing settings screen');
+    showScreen('settingsScreen');
+    updateSettingsDisplay();
+}
+
+function updateSettingsDisplay() {
+    const bankerSelect = document.getElementById('bankerRoundsSelect');
+    const userInput = document.getElementById('userNameInput');
+    
+    if (bankerSelect && gameState) {
+        bankerSelect.value = gameState.customBankerRounds.toString();
+    }
+    
+    if (userInput) {
+        userInput.value = gameManager.currentUser;
+    }
+}
+
+function updateBankerRounds(rounds) {
+    if (!gameState) return;
+    
+    gameState.customBankerRounds = parseInt(rounds);
+    gameState.defaultBankerRounds = parseInt(rounds);
+    updateBankerRoundsDisplay();
+    autoSave();
+}
+
+function updateUserName(name) {
+    if (name.trim()) {
+        gameManager.currentUser = name.trim();
+        autoSave();
+    }
+}
+
+function updateBankerRoundsDisplay() {
+    const display = document.getElementById('currentBankerRounds');
+    if (display && gameState) {
+        display.textContent = gameState.customBankerRounds;
+    }
+}
+
+function goBackFromSettings() {
+    if (gameState && gameState.gameStarted && gameState.rounds.length > 0) {
+        showRecord();
+    } else if (gameState && gameState.gameStarted) {
+        showBankerSelection();
+    } else {
+        showPlayerSetup();
+    }
+}
+
+// Banker Selection Functions
+function showBankerSelection() {
+    console.log('Showing banker selection screen');
+    showScreen('bankerSelectionScreen');
+    updateBankerList();
+    const currentRoundEl = document.getElementById('currentRoundNumber');
+    if (currentRoundEl && gameState) {
+        currentRoundEl.textContent = gameState.currentRound;
+    }
+}
+
+function updateBankerList() {
     const container = document.getElementById('bankerList');
-    if (!container) return;
+    if (!container || !gameState) return;
     
     container.innerHTML = '';
     
@@ -277,10 +709,12 @@ window.updateBankerList = function() {
         `;
         container.appendChild(bankerDiv);
     });
-};
+}
 
-window.selectBanker = function(playerId) {
+function selectBanker(playerId) {
     console.log('Selecting banker:', playerId);
+    if (!gameState) return;
+    
     gameState.currentBankerId = playerId;
     
     const banker = gameState.players.find(p => p.id === playerId);
@@ -315,12 +749,31 @@ window.selectBanker = function(playerId) {
     }
     
     gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
+    autoSave();
     showRecord();
-};
+}
 
-// Record Management
-window.updateRecordScreen = function() {
+function goBackFromBankerSelection() {
+    if (!gameState) return;
+    
+    if (gameState.rounds.length === 0) {
+        showPlayerSetup();
+    } else {
+        showRecord();
+    }
+}
+
+// Record Screen Functions
+function showRecord() {
+    console.log('Showing record screen');
+    showScreen('recordScreen');
+    updateRecordScreen();
+    updateGameLockStatus();
+}
+
+function updateRecordScreen() {
+    if (!gameState) return;
+    
     const roundNumberEl = document.getElementById('recordRoundNumber');
     if (roundNumberEl) {
         roundNumberEl.textContent = gameState.currentRound;
@@ -365,11 +818,11 @@ window.updateRecordScreen = function() {
     
     updateNextRoundButton();
     addFloatingActionButton();
-};
+}
 
-window.updateNextRoundButton = function() {
+function updateNextRoundButton() {
     const btn = document.getElementById('nextRoundBtn');
-    if (!btn) return;
+    if (!btn || !gameState) return;
     
     const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
     
@@ -380,9 +833,9 @@ window.updateNextRoundButton = function() {
     
     const allCompleted = currentRound.records.every(record => record.completed);
     btn.disabled = !allCompleted;
-};
+}
 
-window.addFloatingActionButton = function() {
+function addFloatingActionButton() {
     if (!document.querySelector('.add-player-btn')) {
         const addBtn = document.createElement('button');
         addBtn.className = 'add-player-btn';
@@ -390,11 +843,192 @@ window.addFloatingActionButton = function() {
         addBtn.onclick = openAddPlayerModal;
         document.body.appendChild(addBtn);
     }
-};
+}
 
-// Detailed Records Table - FIXED VERSION
-window.updateDetailedRecords = function() {
+// Next Round Logic
+function nextRound() {
+    if (!gameState) return;
+    
+    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
+    if (!currentRound) return;
+    
+    const bankerTotal = currentRound.records.reduce((sum, record) => sum - record.amount, 0);
+    
+    currentRound.records.forEach(record => {
+        const player = gameState.players.find(p => p.id === record.playerId);
+        if (player) {
+            player.totalWinLoss += record.amount;
+        }
+    });
+    
+    const banker = gameState.players.find(p => p.id === gameState.currentBankerId);
+    if (banker) {
+        banker.totalWinLoss += bankerTotal;
+        banker.bankerRounds++;
+    }
+    
+    gameState.currentRound++;
+    gameState.lastModified = new Date().toISOString();
+    autoSave();
+    
+    if (banker && banker.bankerRounds % gameState.customBankerRounds === 0) {
+        gameState.currentBankerId = null;
+        showBankerSelection();
+    } else {
+        selectBanker(gameState.currentBankerId);
+    }
+}
+
+// Modal Functions (Amount Input)
+function openAmountModal(playerId) {
+    if (!gameState) return;
+    
+    currentRecordingPlayerId = playerId;
+    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
+    const record = currentRound.records.find(r => r.playerId === playerId);
+    
+    const modalTitle = document.getElementById('modalTitle');
+    const amountInput = document.getElementById('amountInput');
+    const modal = document.getElementById('amountModal');
+    
+    if (modalTitle && record) {
+        modalTitle.textContent = `記錄 ${record.playerName} 的輸贏`;
+    }
+    
+    if (amountInput) {
+        amountInput.value = record && record.completed ? record.amount : '';
+    }
+    
+    if (modal) {
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            if (amountInput) {
+                amountInput.focus();
+            }
+        }, 100);
+    }
+}
+
+function closeAmountModal() {
+    const modal = document.getElementById('amountModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentRecordingPlayerId = null;
+}
+
+function confirmAmount() {
+    const amountInput = document.getElementById('amountInput');
+    if (!amountInput || !gameState) return;
+    
+    const amount = parseInt(amountInput.value);
+    
+    if (isNaN(amount)) {
+        showToast('請輸入有效的整數', 'error');
+        return;
+    }
+    
+    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
+    if (!currentRound) return;
+    
+    const record = currentRound.records.find(r => r.playerId === currentRecordingPlayerId);
+    if (!record) return;
+    
+    record.amount = amount;
+    record.completed = true;
+    
+    gameState.lastModified = new Date().toISOString();
+    autoSave();
+    
+    closeAmountModal();
+    updateRecordScreen();
+}
+
+// Add Player Modal
+function openAddPlayerModal() {
+    const input = document.getElementById('newPlayerNameInput');
+    const modal = document.getElementById('addPlayerModal');
+    
+    if (input) {
+        input.value = '';
+    }
+    
+    if (modal) {
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            if (input) {
+                input.focus();
+            }
+        }, 100);
+    }
+}
+
+function closeAddPlayerModal() {
+    const modal = document.getElementById('addPlayerModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function confirmAddPlayer() {
+    const input = document.getElementById('newPlayerNameInput');
+    if (!input || !gameState) return;
+    
+    const name = input.value.trim();
+    
+    if (name === '') {
+        showToast('請輸入玩家名稱', 'error');
+        return;
+    }
+    
+    if (gameState.players.some(player => player.name === name)) {
+        showToast('玩家名稱已存在', 'error');
+        return;
+    }
+    
+    if (gameState.players.length >= 20) {
+        showToast('最多只能添加20位玩家', 'error');
+        return;
+    }
+    
+    const player = {
+        id: gameState.nextPlayerId++,
+        name: name,
+        totalWinLoss: 0,
+        bankerRounds: 0
+    };
+    
+    gameState.players.push(player);
+    
+    // Add to current round if not banker
+    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
+    if (currentRound && player.id !== gameState.currentBankerId) {
+        currentRound.records.push({
+            playerId: player.id,
+            playerName: player.name,
+            amount: 0,
+            completed: false
+        });
+    }
+    
+    gameState.lastModified = new Date().toISOString();
+    autoSave();
+    
+    closeAddPlayerModal();
+    updateRecordScreen();
+}
+
+// Detailed Records Functions
+function showDetailedRecords() {
+    console.log('Showing detailed records screen');
+    showScreen('detailedRecordsScreen');
+    updateDetailedRecords();
+}
+
+function updateDetailedRecords() {
     console.log('Updating detailed records...');
+    if (!gameState) return;
+    
     const headerRow = document.getElementById('tableHeaderRow');
     const tableBody = document.getElementById('recordsTableBody');
     const totalsRow = document.getElementById('totalsRow');
@@ -404,7 +1038,7 @@ window.updateDetailedRecords = function() {
         return;
     }
     
-    // Fix 1: Build correct header with real player names
+    // Build header with player names
     headerRow.innerHTML = `
         <th>輪數</th>
         <th>莊家</th>
@@ -440,7 +1074,7 @@ window.updateDetailedRecords = function() {
     });
     tableBody.innerHTML = bodyHtml;
     
-    // Fix 2: Build correct totals row with final values, not formulas
+    // Build totals row
     totalsRow.innerHTML = `
         <td><strong>總計</strong></td>
         <td>-</td>
@@ -449,10 +1083,12 @@ window.updateDetailedRecords = function() {
             return `<td><strong class="${totalClass}">${player.totalWinLoss >= 0 ? '+' : ''}${player.totalWinLoss}</strong></td>`;
         }).join('')}
     `;
-};
+}
 
 // Edit Record Modal
-window.openEditRecordModal = function(roundNumber, playerId) {
+function openEditRecordModal(roundNumber, playerId) {
+    if (!gameState) return;
+    
     editingRecord.roundNumber = roundNumber;
     editingRecord.playerId = playerId;
     
@@ -481,24 +1117,24 @@ window.openEditRecordModal = function(roundNumber, playerId) {
             }
         }, 100);
     }
-};
+}
 
-window.closeEditRecordModal = function() {
+function closeEditRecordModal() {
     const modal = document.getElementById('editRecordModal');
     if (modal) {
         modal.classList.add('hidden');
     }
     editingRecord = { roundNumber: null, playerId: null };
-};
+}
 
-window.confirmEditRecord = function() {
+function confirmEditRecord() {
     const amountInput = document.getElementById('editAmountInput');
-    if (!amountInput) return;
+    if (!amountInput || !gameState) return;
     
     const amount = parseInt(amountInput.value);
     
     if (isNaN(amount)) {
-        alert('請輸入有效的整數');
+        showToast('請輸入有效的整數', 'error');
         return;
     }
     
@@ -515,14 +1151,16 @@ window.confirmEditRecord = function() {
     recalculatePlayerTotals();
     
     gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
+    autoSave();
     
     closeEditRecordModal();
     updateDetailedRecords();
     showToast('記錄已更新，總計重新計算');
-};
+}
 
-window.recalculatePlayerTotals = function() {
+function recalculatePlayerTotals() {
+    if (!gameState) return;
+    
     // Reset all totals
     gameState.players.forEach(player => {
         player.totalWinLoss = 0;
@@ -547,181 +1185,18 @@ window.recalculatePlayerTotals = function() {
             });
         }
     });
-};
+}
 
-// Amount Input Modal
-window.openAmountModal = function(playerId) {
-    currentRecordingPlayerId = playerId;
-    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
-    const record = currentRound.records.find(r => r.playerId === playerId);
-    
-    const modalTitle = document.getElementById('modalTitle');
-    const amountInput = document.getElementById('amountInput');
-    const modal = document.getElementById('amountModal');
-    
-    if (modalTitle && record) {
-        modalTitle.textContent = `記錄 ${record.playerName} 的輸贏`;
-    }
-    
-    if (amountInput) {
-        amountInput.value = record && record.completed ? record.amount : '';
-    }
-    
-    if (modal) {
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-            if (amountInput) {
-                amountInput.focus();
-            }
-        }, 100);
-    }
-};
+// Statistics Functions
+function showStatistics() {
+    console.log('Showing statistics screen');
+    showScreen('statisticsScreen');
+    updateStatistics();
+}
 
-window.closeAmountModal = function() {
-    const modal = document.getElementById('amountModal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-    currentRecordingPlayerId = null;
-};
-
-window.confirmAmount = function() {
-    const amountInput = document.getElementById('amountInput');
-    if (!amountInput) return;
-    
-    const amount = parseInt(amountInput.value);
-    
-    if (isNaN(amount)) {
-        alert('請輸入有效的整數');
-        return;
-    }
-    
-    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
-    if (!currentRound) return;
-    
-    const record = currentRound.records.find(r => r.playerId === currentRecordingPlayerId);
-    if (!record) return;
-    
-    record.amount = amount;
-    record.completed = true;
-    
-    gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
-    
-    closeAmountModal();
-    updateRecordScreen();
-};
-
-// Add Player Modal
-window.openAddPlayerModal = function() {
-    const input = document.getElementById('newPlayerNameInput');
-    const modal = document.getElementById('addPlayerModal');
-    
-    if (input) {
-        input.value = '';
-    }
-    
-    if (modal) {
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-            if (input) {
-                input.focus();
-            }
-        }, 100);
-    }
-};
-
-window.closeAddPlayerModal = function() {
-    const modal = document.getElementById('addPlayerModal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-};
-
-window.confirmAddPlayer = function() {
-    const input = document.getElementById('newPlayerNameInput');
-    if (!input) return;
-    
-    const name = input.value.trim();
-    
-    if (name === '') {
-        alert('請輸入玩家名稱');
-        return;
-    }
-    
-    if (gameState.players.some(player => player.name === name)) {
-        alert('玩家名稱已存在');
-        return;
-    }
-    
-    if (gameState.players.length >= 20) {
-        alert('最多只能添加20位玩家');
-        return;
-    }
-    
-    const player = {
-        id: gameState.nextPlayerId++,
-        name: name,
-        totalWinLoss: 0,
-        bankerRounds: 0
-    };
-    
-    gameState.players.push(player);
-    
-    // Add to current round if not banker
-    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
-    if (currentRound && player.id !== gameState.currentBankerId) {
-        currentRound.records.push({
-            playerId: player.id,
-            playerName: player.name,
-            amount: 0,
-            completed: false
-        });
-    }
-    
-    gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
-    
-    closeAddPlayerModal();
-    updateRecordScreen();
-};
-
-// Next Round Logic
-window.nextRound = function() {
-    const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
-    if (!currentRound) return;
-    
-    const bankerTotal = currentRound.records.reduce((sum, record) => sum - record.amount, 0);
-    
-    currentRound.records.forEach(record => {
-        const player = gameState.players.find(p => p.id === record.playerId);
-        if (player) {
-            player.totalWinLoss += record.amount;
-        }
-    });
-    
-    const banker = gameState.players.find(p => p.id === gameState.currentBankerId);
-    if (banker) {
-        banker.totalWinLoss += bankerTotal;
-        banker.bankerRounds++;
-    }
-    
-    gameState.currentRound++;
-    gameState.lastModified = new Date().toISOString();
-    saveGameToStorage();
-    
-    if (banker && banker.bankerRounds % gameState.customBankerRounds === 0) {
-        gameState.currentBankerId = null;
-        showBankerSelection();
-    } else {
-        selectBanker(gameState.currentBankerId);
-    }
-};
-
-// Statistics
-window.updateStatistics = function() {
+function updateStatistics() {
     const container = document.getElementById('statisticsContent');
-    if (!container) return;
+    if (!container || !gameState) return;
     
     container.innerHTML = '';
     
@@ -747,13 +1222,22 @@ window.updateStatistics = function() {
         `;
         container.appendChild(statsDiv);
     });
-};
+}
 
-// Excel Export
-window.exportToExcel = function() {
+function goBackFromStatistics() {
+    showRecord();
+}
+
+// Export Functions
+function exportToExcel() {
     try {
         if (typeof XLSX === 'undefined') {
-            alert('Excel匯出功能不可用，請檢查網路連接');
+            showToast('Excel匯出功能不可用，請檢查網路連接', 'error');
+            return;
+        }
+        
+        if (!gameState) {
+            showToast('沒有遊戲數據可匯出', 'error');
             return;
         }
         
@@ -798,21 +1282,27 @@ window.exportToExcel = function() {
         XLSX.utils.book_append_sheet(wb, detailWs, '詳細記錄');
         
         const timestamp = new Date().toLocaleString('zh-TW').replace(/[/:]/g, '-');
-        const filename = `記數app_遊戲記錄_${timestamp}.xlsx`;
+        const gameName = gameManager.currentGameId ? gameManager.games[gameManager.currentGameId].name : '遊戲記錄';
+        const filename = `${gameName}_${timestamp}.xlsx`;
         
         XLSX.writeFile(wb, filename);
         showToast('Excel檔案匯出成功');
     } catch (error) {
         console.error('Export error:', error);
-        alert('匯出失敗，請重試');
+        showToast('匯出失敗，請重試', 'error');
     }
-};
+}
 
-// Game Save/Load
-window.saveGame = function() {
+function saveGame() {
     try {
+        if (!gameState || !gameManager.currentGameId) {
+            showToast('沒有遊戲數據可保存', 'error');
+            return;
+        }
+        
+        const currentGame = gameManager.games[gameManager.currentGameId];
         const gameData = {
-            ...gameState,
+            ...currentGame,
             exportedAt: new Date().toISOString()
         };
         
@@ -821,7 +1311,7 @@ window.saveGame = function() {
         const url = URL.createObjectURL(blob);
         
         const timestamp = new Date().toLocaleString('zh-TW').replace(/[/:]/g, '-');
-        const filename = `記數app_遊戲存檔_${timestamp}.json`;
+        const filename = `${currentGame.name}_${timestamp}.json`;
         
         const a = document.createElement('a');
         a.href = url;
@@ -834,78 +1324,18 @@ window.saveGame = function() {
         showToast('遊戲存檔已下載');
     } catch (error) {
         console.error('Save error:', error);
-        alert('保存失敗，請重試');
+        showToast('保存失敗，請重試', 'error');
     }
-};
-
-window.handleGameFileSelect = function(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const gameData = JSON.parse(e.target.result);
-            
-            // Validate game data structure
-            if (!gameData.players || !Array.isArray(gameData.players) ||
-                !gameData.rounds || !Array.isArray(gameData.rounds)) {
-                throw new Error('Invalid game data structure');
-            }
-            
-            // Load game data
-            gameState = {
-                ...gameData,
-                lastModified: new Date().toISOString()
-            };
-            
-            saveGameToStorage();
-            showToast('遊戲已載入');
-            
-            // Navigate to appropriate screen
-            if (gameState.gameStarted && gameState.rounds.length > 0) {
-                showRecord();
-            } else if (gameState.gameStarted) {
-                showBankerSelection();
-            } else {
-                showPlayerSetup();
-            }
-            
-        } catch (error) {
-            console.error('Load error:', error);
-            alert('檔案格式錯誤或損壞，請檢查檔案');
-        }
-    };
-    
-    reader.readAsText(file);
-};
-
-// Local Storage Management
-window.saveGameToStorage = function() {
-    try {
-        gameState.lastModified = new Date().toISOString();
-        console.log('Game state saved');
-    } catch (error) {
-        console.warn('Could not save to localStorage:', error);
-    }
-};
-
-window.loadGameFromStorage = function() {
-    try {
-        console.log('Loading from localStorage...');
-        console.log('Current gameState:', gameState);
-    } catch (error) {
-        console.warn('Could not load from localStorage:', error);
-    }
-};
+}
 
 // Toast Notifications
-window.showToast = function(message) {
+function showToast(message, type = 'success') {
     const toast = document.getElementById('successToast');
     const messageEl = document.getElementById('toastMessage');
     
     if (toast && messageEl) {
         messageEl.textContent = message;
+        toast.className = `toast ${type}`;
         toast.classList.remove('hidden', 'fade-out');
         
         setTimeout(() => {
@@ -913,12 +1343,12 @@ window.showToast = function(message) {
             setTimeout(() => {
                 toast.classList.add('hidden');
             }, 250);
-        }, 2000);
+        }, 3000);
     }
-};
+}
 
 // Event Listeners
-window.initializeEventListeners = function() {
+function initializeEventListeners() {
     console.log('Initializing event listeners...');
     
     // Enter key handlers
@@ -926,7 +1356,9 @@ window.initializeEventListeners = function() {
         { id: 'playerNameInput', action: addPlayer },
         { id: 'amountInput', action: confirmAmount },
         { id: 'editAmountInput', action: confirmEditRecord },
-        { id: 'newPlayerNameInput', action: confirmAddPlayer }
+        { id: 'newPlayerNameInput', action: confirmAddPlayer },
+        { id: 'gameNameInput', action: confirmCreateGame },
+        { id: 'creatorNameInput', action: confirmCreateGame }
     ];
     
     inputs.forEach(({ id, action }) => {
@@ -945,7 +1377,8 @@ window.initializeEventListeners = function() {
     const modals = [
         { id: 'amountModal', closeFunc: closeAmountModal },
         { id: 'editRecordModal', closeFunc: closeEditRecordModal },
-        { id: 'addPlayerModal', closeFunc: closeAddPlayerModal }
+        { id: 'addPlayerModal', closeFunc: closeAddPlayerModal },
+        { id: 'createGameModal', closeFunc: closeCreateGameModal }
     ];
     
     modals.forEach(({ id, closeFunc }) => {
@@ -961,14 +1394,19 @@ window.initializeEventListeners = function() {
     });
     
     console.log('Event listeners initialized');
-};
+}
+
+// Auto-sync timer
+setInterval(() => {
+    updateSyncStatus();
+    updateGameLockStatus();
+}, 60000); // Update every minute
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing app...');
     initializeEventListeners();
-    loadGameFromStorage();
     showWelcome();
 });
 
-console.log('Script loaded, all functions defined globally');
+console.log('Enhanced script loaded with game management features');

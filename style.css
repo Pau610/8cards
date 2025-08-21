@@ -738,7 +738,7 @@ select.form-control {
 }
 
 /* END PERPLEXITY DESIGN SYSTEM */
-/* iOS Gambling Score App Styles */
+/* Enhanced Gambling Score App Styles with Game Management */
 
 .screen {
     min-height: 100vh;
@@ -836,7 +836,41 @@ select.form-control {
 .welcome-subtitle {
     font-size: var(--font-size-lg);
     color: var(--color-text-secondary);
-    margin-bottom: var(--space-32);
+    margin-bottom: var(--space-24);
+}
+
+.sync-status {
+    width: 100%;
+    margin-bottom: var(--space-24);
+}
+
+.sync-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-8);
+    padding: var(--space-8) var(--space-16);
+    background: var(--color-bg-3);
+    border: 1px solid var(--color-success);
+    border-radius: var(--radius-base);
+    font-size: var(--font-size-sm);
+    color: var(--color-success);
+}
+
+.sync-indicator.syncing {
+    background: var(--color-bg-2);
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+}
+
+.sync-indicator.error {
+    background: var(--color-bg-4);
+    border-color: var(--color-error);
+    color: var(--color-error);
+}
+
+.sync-icon {
+    font-size: var(--font-size-lg);
 }
 
 .welcome-actions {
@@ -847,39 +881,155 @@ select.form-control {
     max-width: 300px;
 }
 
-/* Load Game Screen */
-.load-game-content {
+/* Game Management */
+.game-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    margin-bottom: var(--space-24);
+}
+
+.games-list {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+}
+
+.game-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-card-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-16);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-standard);
+    position: relative;
+}
+
+.game-card:hover {
+    border-color: var(--color-primary);
+    background: var(--color-bg-1);
+}
+
+.game-card.locked {
+    border-color: var(--color-warning);
+    background: var(--color-bg-2);
+}
+
+.game-card.locked:hover {
+    border-color: var(--color-warning);
+    background: var(--color-bg-2);
+}
+
+.lock-indicator {
+    position: absolute;
+    top: var(--space-8);
+    right: var(--space-8);
+    color: var(--color-warning);
+    font-size: var(--font-size-lg);
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-12);
+}
+
+.game-title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+    flex: 1;
+    margin-right: var(--space-16);
+}
+
+.game-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-8);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.game-meta-item {
     display: flex;
     flex-direction: column;
 }
 
-.load-instructions {
-    background: var(--color-bg-3);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-base);
-    padding: var(--space-16);
-    margin-top: var(--space-16);
+.meta-label {
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--space-2);
+}
+
+.game-status {
+    margin-top: var(--space-12);
+    padding: var(--space-6) var(--space-12);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     text-align: center;
 }
 
-.load-instructions p {
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
+.game-status.available {
+    background: var(--color-bg-3);
+    color: var(--color-success);
+    border: 1px solid rgba(var(--color-success-rgb), 0.25);
 }
 
-/* Player Setup */
+.game-status.locked {
+    background: var(--color-bg-2);
+    color: var(--color-warning);
+    border: 1px solid rgba(var(--color-warning-rgb), 0.25);
+}
+
+/* Game Info Bar */
+.game-info-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    margin-bottom: var(--space-16);
+}
+
+.current-game-info {
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-base);
+    padding: var(--space-8) var(--space-12);
+    font-size: var(--font-size-sm);
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+}
+
 .banker-rounds-info {
     text-align: center;
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
-    margin-bottom: var(--space-16);
-    background: var(--color-bg-1);
+    background: var(--color-bg-2);
     padding: var(--space-8) var(--space-12);
     border-radius: var(--radius-base);
 }
 
+/* Game Lock Status */
+.game-lock-status {
+    background: var(--color-bg-3);
+    border: 1px solid var(--color-success);
+    border-radius: var(--radius-base);
+    padding: var(--space-8) var(--space-12);
+    margin-bottom: var(--space-16);
+    font-size: var(--font-size-sm);
+    color: var(--color-success);
+    text-align: center;
+}
+
+.game-lock-status.warning {
+    background: var(--color-bg-2);
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+}
+
+/* Player Setup */
 .player-setup {
     flex: 1;
     display: flex;
@@ -1381,6 +1531,14 @@ select.form-control {
     opacity: 0;
 }
 
+.toast.error {
+    background: var(--color-error);
+}
+
+.toast.warning {
+    background: var(--color-warning);
+}
+
 /* Add Player Button */
 .add-player-btn {
     position: fixed;
@@ -1400,6 +1558,18 @@ select.form-control {
 
 .add-player-btn:hover {
     background: var(--color-primary-hover);
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: var(--space-32);
+    color: var(--color-text-secondary);
+}
+
+.empty-state h3 {
+    margin-bottom: var(--space-8);
+    color: var(--color-text);
 }
 
 /* Responsive Design */
@@ -1450,6 +1620,14 @@ select.form-control {
     
     .export-actions {
         margin-bottom: var(--space-16);
+    }
+    
+    .game-meta {
+        grid-template-columns: 1fr;
+    }
+    
+    .game-actions {
+        flex-direction: column;
     }
 }
 

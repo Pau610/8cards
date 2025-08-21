@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8張記數app</title>
+    <title>記數app - 升級版遊戲管理系統</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -12,32 +12,50 @@
     <div id="welcomeScreen" class="screen">
         <div class="container">
             <div class="welcome-content">
-                <h1 class="welcome-title">8張記數app</h1>
-                <p class="welcome-subtitle">8張記錄</p>
+                <h1 class="welcome-title">記數app</h1>
+                <p class="welcome-subtitle">升級版多遊戲管理系統</p>
+                <div class="sync-status" id="syncStatus">
+                    <span class="sync-indicator" id="syncIndicator">
+                        <span class="sync-icon">☁️</span>
+                        <span id="syncStatusText">已同步</span>
+                    </span>
+                </div>
                 <div class="welcome-actions">
-                    <button class="btn btn--primary btn--lg btn--full-width" onclick="showPlayerSetup()">開始新遊戲</button>
-                    <button class="btn btn--secondary btn--lg btn--full-width" id="continueGameBtn" onclick="continueGame()" style="display: none;">繼續遊戲</button>
-                    <button class="btn btn--outline btn--lg btn--full-width" onclick="showLoadGame()">載入遊戲</button>
+                    <button class="btn btn--primary btn--lg btn--full-width" onclick="showGameManagement()">管理遊戲</button>
+                    <button class="btn btn--secondary btn--lg btn--full-width" onclick="createNewGame()">創建新遊戲</button>
+                    <button class="btn btn--outline btn--lg btn--full-width" onclick="showGameList()">選擇現有遊戲</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Load Game Screen -->
-    <div id="loadGameScreen" class="screen hidden">
+    <!-- Game Management Screen -->
+    <div id="gameManagementScreen" class="screen hidden">
         <div class="container">
             <div class="header">
                 <button class="btn-back" onclick="showWelcome()">← 返回</button>
-                <h2>載入遊戲</h2>
+                <h2>遊戲管理</h2>
+                <button class="btn-settings" onclick="syncWithCloud()">☁️</button>
             </div>
-            <div class="load-game-content">
-                <div class="form-group">
-                    <label class="form-label">選擇遊戲記錄檔案</label>
-                    <input type="file" id="gameFileInput" class="form-control" accept=".json" onchange="handleGameFileSelect(event)">
-                </div>
-                <div class="load-instructions">
-                    <p>請選擇之前保存的 JSON 格式遊戲記錄檔案</p>
-                </div>
+            <div class="game-actions">
+                <button class="btn btn--primary btn--full-width" onclick="createNewGame()">創建新遊戲</button>
+                <button class="btn btn--secondary btn--full-width" onclick="syncWithCloud()">同步雲端</button>
+            </div>
+            <div id="gamesList" class="games-list">
+                <!-- Games will be dynamically generated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Game List Screen -->
+    <div id="gameListScreen" class="screen hidden">
+        <div class="container">
+            <div class="header">
+                <button class="btn-back" onclick="showWelcome()">← 返回</button>
+                <h2>選擇遊戲</h2>
+            </div>
+            <div id="gamesSelectionList" class="games-list">
+                <!-- Games will be dynamically generated here -->
             </div>
         </div>
     </div>
@@ -46,12 +64,17 @@
     <div id="playerSetupScreen" class="screen hidden">
         <div class="container">
             <div class="header">
-                <button class="btn-back" onclick="showWelcome()">← 返回</button>
+                <button class="btn-back" onclick="backToGameManagement()">← 返回</button>
                 <h2>添加玩家</h2>
                 <button class="btn-settings" onclick="showSettings()">⚙️</button>
             </div>
-            <div class="banker-rounds-info">
-                莊家輪數設定: <span id="currentBankerRounds">3</span> 輪
+            <div class="game-info-bar">
+                <div class="current-game-info">
+                    遊戲: <span id="currentGameTitle">新遊戲</span>
+                </div>
+                <div class="banker-rounds-info">
+                    莊家輪數: <span id="currentBankerRounds">3</span> 輪
+                </div>
             </div>
             <div class="player-setup">
                 <div class="form-group">
@@ -93,6 +116,13 @@
                         <option value="10">10 輪</option>
                     </select>
                 </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">用戶名稱</div>
+                        <div class="setting-description">設定您的名稱</div>
+                    </div>
+                    <input type="text" id="userNameInput" class="form-control" placeholder="輸入您的名稱" onchange="updateUserName(this.value)">
+                </div>
             </div>
         </div>
     </div>
@@ -120,6 +150,7 @@
                         第 <span id="recordRoundNumber">1</span> 輪 - 莊家: <span id="currentBankerName"></span>
                     </div>
                 </div>
+                <div class="game-lock-status" id="gameLockStatus"></div>
                 <div class="player-record-list" id="playerRecordList"></div>
                 <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪</button>
             </div>
@@ -223,6 +254,30 @@
                     <span class="nav-icon">⚙️</span>
                     <span class="nav-label">設定</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Game Modal -->
+    <div id="createGameModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>創建新遊戲</h3>
+                <button class="modal-close" onclick="closeCreateGameModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">遊戲名稱</label>
+                    <input type="text" id="gameNameInput" class="form-control" placeholder="輸入遊戲名稱" maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">創建者名稱</label>
+                    <input type="text" id="creatorNameInput" class="form-control" placeholder="輸入創建者名稱" maxlength="20">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" onclick="closeCreateGameModal()">取消</button>
+                    <button class="btn btn--primary" onclick="confirmCreateGame()">創建</button>
+                </div>
             </div>
         </div>
     </div>
