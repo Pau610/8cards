@@ -99,29 +99,6 @@ async initialize() {
         return false;
     }
 }
-
-async function testGoogleAPI() {
-    console.log('🧪 Testing Google API configuration...');
-    
-    // 測試1：檢查API金鑰
-    try {
-        const response = await fetch(
-            `https://www.googleapis.com/drive/v3/about?fields=user&key=${GOOGLE_CONFIG.apiKey}`
-        );
-        
-        if (response.ok) {
-            console.log('✅ API key is valid');
-        } else {
-            console.error('❌ API key test failed:', response.status);
-        }
-    } catch (error) {
-        console.error('❌ API key test error:', error);
-    }
-    
-    // 測試2：檢查網站來源
-    console.log('🌐 Current origin:', window.location.origin);
-    console.log('🌐 Current hostname:', window.location.hostname);
-}
     
     async signIn() {
         try {
