@@ -22,55 +22,83 @@ class GoogleDriveManager {
         this.retryDelay = 5000;
     }
 
-    async initialize() {
-        try {
-            if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId || 
-                GOOGLE_CONFIG.apiKey === 'YOUR_GOOGLE_DRIVE_API_KEY' || 
-                GOOGLE_CONFIG.clientId === 'YOUR_GOOGLE_CLIENT_ID') {
-                console.log('Google Drive API credentials not configured');
-                this.updateAuthUI();
-                return false;
-            }
+async initialize() {
+    console.log('🔍 Starting Google Drive API initialization...');
+    console.log('Current origin:', window.location.origin);
+    console.log('API Key configured:', !!GOOGLE_CONFIG.apiKey);
+    console.log('Client ID configured:', !!GOOGLE_CONFIG.clientId);
+    
+    try {
+        // 檢查Google APIs是否已加載
+        if (typeof gapi === 'undefined') {
+            throw new Error('Google API library not loaded');
+        }
 
-            // Check if gapi is available
-            if (typeof gapi === 'undefined') {
-                console.log('Google API not loaded');
-                this.updateAuthUI();
-                return false;
-            }
-
-            // Initialize Google API
-            await new Promise((resolve) => {
-                gapi.load('client:auth2', resolve);
-            });
-
-            await gapi.client.init({
-                apiKey: GOOGLE_CONFIG.apiKey,
-                clientId: GOOGLE_CONFIG.clientId,
-                discoveryDocs: [GOOGLE_CONFIG.discoveryDoc],
-                scope: GOOGLE_CONFIG.scopes
-            });
-
-            this.authInstance = gapi.auth2.getAuthInstance();
-            this.isSignedIn = this.authInstance.isSignedIn.get();
-            
-            if (this.isSignedIn) {
-                this.currentUser = this.authInstance.currentUser.get();
-                await this.ensureAppFolder();
-            }
-
-            this.updateAuthUI();
-            this.isInitialized = true;
-            
-            console.log('Google Drive API initialized successfully');
-            return true;
-        } catch (error) {
-            console.error('Failed to initialize Google Drive API:', error);
-            this.handleSyncError(error);
+        // 檢查憑證配置
+        if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId || 
+            GOOGLE_CONFIG.apiKey === 'YOUR_GOOGLE_DRIVE_API_KEY' || 
+            GOOGLE_CONFIG.clientId === 'YOUR_GOOGLE_CLIENT_ID') {
+            console.log('❌ Google Drive API credentials not configured');
             this.updateAuthUI();
             return false;
         }
+
+        console.log('📚 Loading Google API client...');
+        
+        // 加載Google API客戶端
+        await new Promise((resolve, reject) => {
+            gapi.load('client:auth2', {
+                callback: resolve,
+                onerror: (error) => {
+                    console.error('❌ Failed to load Google API:', error);
+                    reject(new Error('Failed to load Google API client'));
+                }
+            });
+        });
+
+        console.log('🔑 Initializing Google API client...');
+        
+        // 初始化客戶端
+        await gapi.client.init({
+            apiKey: GOOGLE_CONFIG.apiKey,
+            clientId: GOOGLE_CONFIG.clientId,
+            discoveryDocs: [GOOGLE_CONFIG.discoveryDoc],
+            scope: GOOGLE_CONFIG.scopes
+        });
+
+        console.log('🔐 Getting auth instance...');
+        this.authInstance = gapi.auth2.getAuthInstance();
+        
+        if (!this.authInstance) {
+            throw new Error('Failed to get auth instance');
+        }
+
+        this.isSignedIn = this.authInstance.isSignedIn.get();
+        console.log('👤 Sign-in status:', this.isSignedIn);
+        
+        if (this.isSignedIn) {
+            this.currentUser = this.authInstance.currentUser.get();
+            console.log('✅ User already signed in');
+            await this.ensureAppFolder();
+        }
+
+        this.updateAuthUI();
+        this.isInitialized = true;
+        console.log('✅ Google Drive API initialized successfully');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Google Drive initialization failed:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
+        
+        this.updateAuthUI();
+        return false;
     }
+}
 
     async signIn() {
         try {
