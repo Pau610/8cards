@@ -1927,7 +1927,13 @@ window.nextRound = function() {
     gameState.currentRound++;
     gameState.lastModified = new Date().toISOString();
     autoSave();
-    
+
+    // --- ADDED: Immediately upload to cloud after next round ---
+    if (googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
+    // ----------------------------------------------------------
+
     if (banker && banker.bankerRounds % gameState.customBankerRounds === 0) {
         gameState.currentBankerId = null;
         showBankerSelection();
