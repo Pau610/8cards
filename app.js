@@ -818,25 +818,28 @@ class GoogleDriveManager {
 
     handleSyncError(error) {
         console.error('Sync error:', error);
-        
+
+        let errorMessage = '同步失敗，請檢查網路連線';
         if (error.status === 401) {
-            // Re-authenticate
-            showNotification('認證已過期，請重新登入', 'warning');
+            errorMessage = '認證已過期，請重新登入';
             this.signOut();
         } else if (error.status === 403) {
-            showNotification('Google Drive 配額超限，請稍後再試', 'warning');
+            // Try to get detailed error message from Google
+            if (error.result && error.result.error && error.result.error.message) {
+                errorMessage = 'Google Drive 錯誤: ' + error.result.error.message;
+            } else {
+                errorMessage = 'Google Drive 權限錯誤，請確認權限與設定';
+            }
         } else if (error.status === 404) {
-            showNotification('雲端檔案不存在，將創建新備份', 'warning');
+            errorMessage = '雲端檔案不存在，將創建新備份';
         } else if (!navigator.onLine) {
-            showNotification('網路連線中斷，將在恢復後自動同步', 'warning');
+            errorMessage = '網路連線中斷，將在恢復後自動同步';
             this.showOfflineMode();
-        } else {
-            showNotification('同步失敗，請檢查網路連線', 'error');
         }
-        
+        showNotification(errorMessage, error.status === 403 ? 'warning' : 'error');
         updateSyncStatus('error');
     }
-
+    
     showOfflineMode() {
         const indicator = document.getElementById('offlineIndicator');
         if (indicator) {
