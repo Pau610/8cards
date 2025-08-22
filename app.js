@@ -583,7 +583,7 @@ class GoogleDriveManager {
         }
     }
 
-        async uploadGameData(gameData) {
+    async uploadGameData(gameData) {
         if (!this.isSignedIn || !this.appFolderId || typeof gapi === 'undefined' || !gapi.client) {
             throw new Error('Not authenticated or Google Drive API not available');
         }
@@ -842,7 +842,7 @@ class GoogleDriveManager {
         showNotification(errorMessage, error.status === 403 ? 'warning' : 'error');
         updateSyncStatus('error');
     }
-    
+
     showOfflineMode() {
         const indicator = document.getElementById('offlineIndicator');
         if (indicator) {
@@ -922,9 +922,6 @@ let gameManager = {
             createdAt: '2025-08-21T08:58:00.000Z',
             lastModified: '2025-08-21T08:58:00.000Z',
             lastEditor: 'John',
-            isLocked: false,
-            lockExpiry: null,
-            lockHolder: null,
             playerCount: 4,
             roundCount: 8,
             cloudFileId: null,
@@ -955,9 +952,6 @@ let gameManager = {
             createdAt: '2025-08-21T10:30:00.000Z',
             lastModified: '2025-08-21T10:30:00.000Z',
             lastEditor: 'Alice',
-            isLocked: true,
-            lockExpiry: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-            lockHolder: 'Alice',
             playerCount: 6,
             roundCount: 12,
             cloudFileId: null,
@@ -1134,12 +1128,6 @@ function formatDate(isoString) {
     return new Date(isoString).toLocaleDateString('zh-TW');
 }
 
-function isGameLocked(game) {
-    if (!game.isLocked) return false;
-    if (!game.lockExpiry) return false;
-    return new Date() < new Date(game.lockExpiry);
-}
-
 // Screen Navigation Functions - Fixed
 function showScreen(screenId) {
     console.log('Showing screen:', screenId);
@@ -1204,6 +1192,27 @@ window.backToGameManagement = function() {
 };
 
 // Game Management Functions
+
+function selectGame(gameId) {
+    const game = gameManager.games[gameId];
+    if (!game) return;
+    
+    gameManager.currentGameId = gameId;
+    gameState = game.gameData;
+    
+    if (gameState.gameStarted && gameState.rounds.length > 0) {
+        showRecord();
+    } else if (gameState.gameStarted) {
+        showBankerSelection();
+    } else {
+        showPlayerSetup();
+    }
+}
+
+function selectAndStartGame(gameId) {
+    selectGame(gameId);
+}
+
 function updateGamesList() {
     const container = document.getElementById('gamesList');
     if (!container) return;
@@ -1223,21 +1232,17 @@ function updateGamesList() {
     
     games.forEach(game => {
         const gameDiv = document.createElement('div');
-        const locked = isGameLocked(game);
         const syncing = game.syncStatus === 'syncing';
         
-        gameDiv.className = `game-card ${locked ? 'locked' : ''} ${syncing ? 'syncing' : ''}`;
+        gameDiv.className = `game-card ${syncing ? 'syncing' : ''}`;
         gameDiv.onclick = () => selectGame(game.id);
         
         let statusText = '可編輯';
-        if (locked) {
-            statusText = `正被 ${game.lockHolder} 編輯中`;
-        } else if (syncing) {
+        if (syncing) {
             statusText = '正在同步中';
         }
         
         gameDiv.innerHTML = `
-            ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
             ${syncing ? '<div class="sync-indicator-card">☁️</div>' : ''}
             <div class="game-header">
                 <h3 class="game-title">${game.name}</h3>
@@ -1260,13 +1265,68 @@ function updateGamesList() {
                     <span>${formatDate(game.lastModified)}</span>
                 </div>
             </div>
-            <div class="game-status ${locked ? 'locked' : syncing ? 'syncing' : 'available'}">
+            <div class="game-status ${syncing ? 'syncing' : 'available'}">
                 ${statusText}
             </div>
         `;
         container.appendChild(gameDiv);
     });
 }
+
+function updateGamesSelectionList() {
+    const container = document.getElementById('gamesSelectionList');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const games = Object.values(gameManager.games);
+    if (games.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>尚無遊戲</h3>
+                <p>返回首頁創建您的第一個遊戲</p>
+            </div>
+        `;
+        return;
+    }
+    
+    games.forEach(game => {
+        const gameDiv = document.createElement('div');
+        gameDiv.className = `game-card`;
+        gameDiv.onclick = () => {
+            selectAndStartGame(game.id);
+        };
+        
+        gameDiv.innerHTML = `
+            <div class="game-header">
+                <h3 class="game-title">${game.name}</h3>
+            </div>
+            <div class="game-meta">
+                <div class="game-meta-item">
+                    <span class="meta-label">創建者</span>
+                    <span>${game.creator}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">輪數</span>
+                    <span>${game.roundCount} 輪</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">創建時間</span>
+                    <span>${formatDate(game.createdAt)}</span>
+                </div>
+                <div class="game-meta-item">
+                    <span class="meta-label">最後修改</span>
+                    <span>${formatDate(game.lastModified)}</span>
+                </div>
+            </div>
+            <div class="game-status available">
+                點擊繼續遊戲
+            </div>
+        `;
+        container.appendChild(gameDiv);
+    });
+}
+
 
 function updateGamesSelectionList() {
     const container = document.getElementById('gamesSelectionList');
