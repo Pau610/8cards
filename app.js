@@ -6,7 +6,7 @@ const GOOGLE_CONFIG = {
     clientId: '969122977239-1n1vhboklrshhlfv70ak1jhtd47hb0ef.apps.googleusercontent.com', // 用戶需要替換
     discoveryDoc: 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
     scopes: 'https://www.googleapis.com/auth/drive.file',
-    appName: '8 Cards'
+    appName: '8 Cards Score Recording'
 };
 
 // Google Drive Manager Class
