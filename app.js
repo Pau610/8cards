@@ -1,4 +1,4 @@
-// Enhanced Game State Management with Instant Sync Functionality
+// Enhanced Game State Management with Mobile-Optimized Google Identity Services
 
 // Google Drive API Configuration - Updated with fixed credentials
 const GOOGLE_CONFIG = {
@@ -9,7 +9,29 @@ const GOOGLE_CONFIG = {
     appName: 'Gambling Scorekeeper'
 };
 
-// Google Drive Manager Class with Google Identity Services
+// Device Detection Functions
+function isMobileDevice() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const mobileRegex = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
+    const isMobileUA = mobileRegex.test(userAgent);
+    const isMobileScreen = window.innerWidth <= 768;
+    const result = isMobileUA || isMobileScreen;
+    console.log('🔍 Device detection:', {
+        userAgent: userAgent.substring(0, 50) + '...',
+        isMobileUA,
+        isMobileScreen,
+        screenWidth: window.innerWidth,
+        result: result ? 'Mobile' : 'Desktop'
+    });
+    return result;
+}
+
+function isIOSSafari() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    return /iPad|iPhone|iPod/.test(userAgent) && /Safari/.test(userAgent) && !/CriOS|FxiOS|OPiOS|mercury/.test(userAgent);
+}
+
+// Google Drive Manager Class with Mobile-Optimized Google Identity Services
 class GoogleDriveManager {
     constructor() {
         this.isSignedIn = false;
@@ -20,50 +42,78 @@ class GoogleDriveManager {
         this.tokenClient = null;
         this.retryAttempts = 0;
         this.maxRetries = 3;
-        this.syncInProgress = false;
+        this.initRetryCount = 0;
+        this.isInitializing = false;
     }
 
     async initialize() {
+        if (this.isInitializing) {
+            console.log('⏳ Initialization already in progress...');
+            return false;
+        }
+
+        this.isInitializing = true;
+
         try {
-            console.log('🔍 Starting Google Drive API initialization with GIS...');
-            console.log('Current origin:', window.location.origin);
+            console.log('🔍 Starting Google Drive API initialization...');
+            console.log('📱 Device type:', isMobileDevice() ? 'Mobile' : 'Desktop');
+            console.log('🍎 iOS Safari:', isIOSSafari());
             
             // 檢查配置
             if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId) {
                 console.log('❌ Google Drive API credentials not configured');
                 this.updateAuthUI();
+                this.isInitializing = false;
                 return false;
             }
 
-            // 檢查Google APIs是否已加載
+            // 等待 Google APIs 載入
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            while (attempts < maxAttempts) {
+                if (typeof gapi !== 'undefined' && typeof google !== 'undefined') {
+                    console.log('✅ Google APIs detected');
+                    break;
+                }
+                console.log(`⏳ Waiting for Google APIs... (${attempts + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                attempts++;
+            }
+
             if (typeof gapi === 'undefined') {
-                console.log('⚠️ Google API client not loaded, will retry...');
-                this.updateAuthUI();
+                console.log('❌ Google API client not loaded after waiting');
+                showNotification('Google API 載入失敗，請重新整理頁面', 'error');
+                this.isInitializing = false;
                 return false;
             }
 
             if (typeof google === 'undefined') {
-                console.log('⚠️ Google Identity Services not loaded, will retry...');
-                this.updateAuthUI();
+                console.log('❌ Google Identity Services not loaded after waiting');
+                showNotification('Google 身份服務載入失敗，請重新整理頁面', 'error');
+                this.isInitializing = false;
                 return false;
             }
 
             console.log('📚 Loading Google API client...');
             
-            // 只加載client，不加載auth2
+            // 加載gapi client
             await new Promise((resolve, reject) => {
                 gapi.load('client', {
-                    callback: resolve,
+                    callback: () => {
+                        console.log('✅ gapi.client loaded');
+                        resolve();
+                    },
                     onerror: () => {
-                        console.log('Failed to load gapi.client, continuing...');
-                        resolve(); // Don't reject, continue
+                        console.log('❌ Failed to load gapi.client');
+                        reject(new Error('Failed to load gapi.client'));
                     }
                 });
             });
 
             console.log('🔑 Initializing Google API client...');
             
-            // 初始化gapi client（只用於API調用，不用於認證）
+            // 初始化gapi client
             await gapi.client.init({
                 apiKey: GOOGLE_CONFIG.apiKey,
                 discoveryDocs: [GOOGLE_CONFIG.discoveryDoc]
@@ -71,35 +121,59 @@ class GoogleDriveManager {
 
             console.log('🆔 Initializing Google Identity Services...');
             
-            // 初始化Google Identity Services
-            google.accounts.id.initialize({
+            // 根據裝置類型選擇不同的初始化方式
+            const initConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
-                callback: this.handleCredentialResponse.bind(this)
-            });
+                callback: this.handleCredentialResponse.bind(this),
+                auto_select: false,
+                cancel_on_tap_outside: false
+            };
+            
+            // 手機版使用redirect模式，桌面版使用popup模式
+            if (isMobileDevice()) {
+                console.log('📱 Using mobile-optimized settings...');
+                initConfig.ux_mode = 'redirect';  // 手機版使用redirect
+                initConfig.context = 'signin';
+                initConfig.use_fedcm_for_prompt = false;
+            } else {
+                console.log('🖥️ Using desktop-optimized settings...');
+                initConfig.ux_mode = 'popup';     // 桌面版使用popup
+                initConfig.context = 'signin';
+            }
+            
+            google.accounts.id.initialize(initConfig);
 
-            // 初始化OAuth2 token client
-            this.tokenClient = google.accounts.oauth2.initTokenClient({
+            // OAuth2 token client配置
+            const tokenConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
                 scope: GOOGLE_CONFIG.scopes,
-                callback: this.handleTokenResponse.bind(this)
-            });
+                callback: this.handleTokenResponse.bind(this),
+                error_callback: this.handleTokenError.bind(this)
+            };
+            
+            // 手機版和桌面版使用不同的UX模式
+            if (isMobileDevice()) {
+                tokenConfig.ux_mode = 'redirect';
+            } else {
+                tokenConfig.ux_mode = 'popup';
+            }
+            
+            this.tokenClient = google.accounts.oauth2.initTokenClient(tokenConfig);
 
-            this.updateAuthUI();
             this.isInitialized = true;
+            this.initRetryCount = 0;
+            this.isInitializing = false;
+            this.updateAuthUI();
+            
             console.log('✅ Google Identity Services initialized successfully');
+            showNotification('Google Drive 服務已就緒', 'success');
             return true;
             
         } catch (error) {
             console.error('❌ Google Drive initialization failed:', error);
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
-            
-            // Don't fail completely, continue with basic functionality
-            this.isInitialized = false;
+            this.isInitializing = false;
             this.updateAuthUI();
+            showNotification('Google Drive 初始化失敗，部分功能可能受限', 'warning');
             return false;
         }
     }
@@ -107,6 +181,7 @@ class GoogleDriveManager {
     // 處理ID token（用於身份驗證）
     handleCredentialResponse(response) {
         console.log('🔐 Received credential response');
+        updateSyncStatus('connecting');
         
         try {
             // 解析JWT token獲取用戶信息
@@ -126,6 +201,7 @@ class GoogleDriveManager {
             
         } catch (error) {
             console.error('❌ Error handling credential:', error);
+            updateSyncStatus('error');
             showNotification('登入失敗，請重試', 'error');
         }
     }
@@ -138,6 +214,7 @@ class GoogleDriveManager {
             this.tokenClient.requestAccessToken({prompt: ''});
         } else {
             console.error('❌ Token client not initialized');
+            updateSyncStatus('error');
         }
     }
 
@@ -147,7 +224,7 @@ class GoogleDriveManager {
         
         if (response.error) {
             console.error('❌ Token request failed:', response.error);
-            showNotification('授權失敗，請重試', 'error');
+            this.handleTokenError(response);
             return;
         }
 
@@ -180,45 +257,153 @@ class GoogleDriveManager {
             
         } catch (error) {
             console.error('❌ Post-auth setup failed:', error);
+            updateSyncStatus('error');
             showNotification('Google Drive 已登入，但雲端功能可能受限', 'warning');
         }
     }
 
-    // 手動登入
-    async signIn() {
-        try {
-            console.log('🚀 Starting sign-in process...');
-            
-            if (!this.isInitialized) {
-                const initialized = await this.initialize();
-                if (!initialized) {
-                    showNotification('正在初始化 Google 服務...', 'warning');
-                    // Continue anyway, don't block the sign-in
-                }
+    // 處理令牌錯誤 - 手機版專用
+    handleTokenError(error) {
+        console.error('❌ Token request failed:', error);
+        updateSyncStatus('error');
+        
+        let message = '';
+        let duration = 4000;
+        
+        if (isMobileDevice()) {
+            // 手機版錯誤處理
+            if (error.type === 'popup_blocked') {
+                message = '📱 請在瀏覽器設定中允許彈出視窗，然後重試';
+                duration = 6000;
+            } else if (error.type === 'access_denied' || error.error === 'access_denied') {
+                message = '登入被取消，請重新嘗試';
+            } else if (error.error === 'invalid_request') {
+                message = '📱 建議切換到桌面版瀏覽器以獲得更好體驗';
+                duration = 5000;
+            } else {
+                message = '手機登入失敗，請重試或使用桌面版';
             }
-            
-            // 檢查是否有 Google Identity Services
-            if (typeof google === 'undefined' || !google.accounts) {
-                showNotification('Google 服務尚未完全加載，請稍後再試', 'warning');
+        } else {
+            // 桌面版錯誤處理
+            if (error.type === 'popup_blocked') {
+                message = '請允許彈出視窗以完成登入';
+            } else if (error.type === 'access_denied' || error.error === 'access_denied') {
+                message = '登入被拒絕，請重試';
+            } else {
+                message = '授權失敗: ' + (error.message || error.error || error.type);
+            }
+        }
+        
+        showNotification(message, 'error', duration);
+    }
+
+    // 手機版登入流程優化
+    async signIn() {
+        if (!this.isInitialized) {
+            if (this.isInitializing) {
+                showNotification('Google Drive 正在初始化中，請稍等...', 'warning');
                 return false;
             }
             
-            // 使用Google Identity Services進行登入
-            google.accounts.id.prompt((notification) => {
-                console.log('Google ID prompt notification:', notification);
-                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                    // 如果提示沒有顯示，顯示登入按鈕
+            showNotification('正在初始化 Google Drive 服務...', 'warning');
+            const initialized = await this.initialize();
+            if (!initialized) {
+                showNotification('Google Drive 初始化失敗，請重試', 'error');
+                return false;
+            }
+        }
+
+        try {
+            console.log('🚀 Starting sign-in process...');
+            updateSyncStatus('connecting');
+            
+            if (isMobileDevice()) {
+                console.log('📱 Mobile sign-in flow...');
+                // 手機版：顯示大按鈕讓用戶點擊
+                this.showMobileSignInButton();
+            } else {
+                console.log('🖥️ Desktop sign-in flow...');
+                // 桌面版：嘗試自動prompt或顯示按鈕
+                this.renderSignInButton();
+                
+                try {
+                    google.accounts.id.prompt((notification) => {
+                        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                            console.log('🔘 Prompt not displayed, showing button');
+                            this.renderSignInButton();
+                        }
+                    });
+                } catch (promptError) {
+                    console.log('⚠️ Prompt failed, showing button:', promptError);
                     this.renderSignInButton();
                 }
-            });
+            }
             
             return true;
             
         } catch (error) {
             console.error('❌ Sign-in failed:', error);
+            updateSyncStatus('error');
             showNotification('登入失敗: ' + error.message, 'error');
             return false;
         }
+    }
+
+    // 手機版專用登入按鈕
+    showMobileSignInButton() {
+        const buttonContainer = document.getElementById('googleSignInButton');
+        const manualBtn = document.getElementById('manualSignInBtn');
+        
+        if (!buttonContainer) return;
+        
+        console.log('📱 Showing mobile sign-in button');
+        
+        // 清除現有內容
+        buttonContainer.innerHTML = '';
+        
+        // 創建大的手機友好按鈕
+        const mobileButton = document.createElement('button');
+        mobileButton.className = 'btn btn--primary btn--lg btn--full-width mobile-google-btn';
+        mobileButton.innerHTML = `
+            <span class="google-icon">G</span>
+            使用Google帳號登入
+            <span class="mobile-hint">（手機版）</span>
+        `;
+        
+        mobileButton.onclick = () => {
+            console.log('📱 Mobile Google sign-in triggered');
+            try {
+                // 直接觸發Google登入流程
+                google.accounts.id.prompt();
+            } catch (error) {
+                console.error('Mobile sign-in error:', error);
+                // 降級到token client
+                if (this.tokenClient) {
+                    this.tokenClient.requestAccessToken({prompt: 'consent'});
+                }
+            }
+        };
+        
+        buttonContainer.appendChild(mobileButton);
+        
+        // 隱藏桌面版按鈕
+        if (manualBtn) manualBtn.style.display = 'none';
+        
+        // 添加手機版說明
+        const helpText = document.createElement('div');
+        helpText.className = 'mobile-help-text';
+        helpText.innerHTML = `
+            <p><small>📱 手機版登入提示：</small></p>
+            <ul>
+                <li><small>請允許瀏覽器的彈出視窗</small></li>
+                <li><small>某些瀏覽器可能會轉向新頁面</small></li>
+                <li><small>登入完成後會自動返回</small></li>
+            </ul>
+        `;
+        buttonContainer.appendChild(helpText);
+        
+        // 移除hidden class
+        buttonContainer.classList.remove('hidden');
     }
 
     // 登出
@@ -276,6 +461,9 @@ class GoogleDriveManager {
                 width: 300
             });
             
+            // 移除hidden class
+            buttonContainer.classList.remove('hidden');
+            
             console.log('✅ Google Sign-In button rendered successfully');
         } catch (error) {
             console.error('Failed to render Google Sign-In button:', error);
@@ -286,6 +474,7 @@ class GoogleDriveManager {
                     使用Google帳號登入
                 </button>
             `;
+            buttonContainer.classList.remove('hidden');
         }
     }
 
@@ -310,9 +499,24 @@ class GoogleDriveManager {
             signInButton.classList.remove('hidden');
             userInfo.classList.add('hidden');
             
-            // 如果已初始化但未登入，嘗試渲染登入按鈕
+            // 根據設備類型和初始化狀態渲染登入按鈕
             if (this.isInitialized && typeof google !== 'undefined' && google.accounts) {
-                setTimeout(() => this.renderSignInButton(), 100);
+                setTimeout(() => {
+                    if (isMobileDevice()) {
+                        this.showMobileSignInButton();
+                    } else {
+                        this.renderSignInButton();
+                    }
+                }, 100);
+            } else {
+                // 顯示基本登入按鈕
+                signInButton.innerHTML = `
+                    <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
+                        <span class="google-icon">G</span>
+                        使用Google帳號登入${isMobileDevice() ? ' (手機版)' : ''}
+                    </button>
+                `;
+                signInButton.classList.remove('hidden');
             }
         }
         
@@ -384,14 +588,6 @@ class GoogleDriveManager {
             throw new Error('Not authenticated or Google Drive API not available');
         }
 
-        // Prevent concurrent uploads
-        if (this.syncInProgress) {
-            console.log('⏭️ Sync already in progress, skipping...');
-            return false;
-        }
-
-        this.syncInProgress = true;
-
         try {
             const fileName = 'games-data.json';
             const metadata = {
@@ -445,13 +641,11 @@ class GoogleDriveManager {
             });
 
             cloudConfig.lastSyncTime = new Date().toISOString();
-            console.log('✅ Game data uploaded successfully:', response.result);
-            return true;
+            console.log('Game data uploaded successfully:', response.result);
+            return response.result;
         } catch (error) {
-            console.error('❌ Failed to upload game data:', error);
+            console.error('Failed to upload game data:', error);
             throw error;
-        } finally {
-            this.syncInProgress = false;
         }
     }
 
@@ -610,14 +804,11 @@ class GoogleDriveManager {
 
         try {
             showSyncProgress('正在上傳數據...', 50);
-            const success = await this.uploadGameData(gameManager);
+            await this.uploadGameData(gameManager);
             showSyncProgress('同步完成', 100);
             setTimeout(() => showSyncProgress('', 0), 1000);
-            if (success) {
-                showNotification('雲端同步成功', 'success');
-                gameManager.hasUnsavedChanges = false;
-            }
-            return success;
+            showNotification('雲端同步成功', 'success');
+            return true;
         } catch (error) {
             showSyncProgress('', 0);
             this.handleSyncError(error);
@@ -676,41 +867,29 @@ class GoogleDriveManager {
     }
 }
 
-// Enhanced Auto Sync Class with Instant Sync Support
+// Auto Sync Class
 class AutoSync {
     constructor(interval = 300000) { // 5 minutes
         this.interval = interval;
         this.timer = null;
         this.isRunning = false;
-        this.lastSyncTime = null;
     }
 
     start() {
-        if (this.isRunning) return;
+        if (this.isRunning || !googleDriveManager.isSignedIn) return;
         
         this.isRunning = true;
-        console.log('🔄 Auto-sync started, interval:', this.interval / 1000, 'seconds');
-        
         this.timer = setInterval(async () => {
-            if (googleDriveManager.isSignedIn && 
-                gameManager.hasUnsavedChanges && 
-                !googleDriveManager.syncInProgress) {
-                
-                // 檢查是否剛進行過即時同步
-                const now = Date.now();
-                if (this.lastSyncTime && (now - this.lastSyncTime) < 30000) {
-                    console.log('⏭️ Skipping auto-sync, recent instant sync detected');
-                    return;
-                }
-                
-                console.log('🔄 Auto-sync triggered');
-                const success = await googleDriveManager.uploadGameData(gameManager);
+            if (googleDriveManager.isSignedIn && gameManager.hasUnsavedChanges) {
+                console.log('Auto-syncing to Google Drive...');
+                const success = await googleDriveManager.syncWithCloud();
                 if (success) {
                     gameManager.hasUnsavedChanges = false;
-                    this.recordSyncTime();
                 }
             }
         }, this.interval);
+        
+        console.log('Auto-sync started');
     }
 
     stop() {
@@ -721,52 +900,11 @@ class AutoSync {
         this.isRunning = false;
         console.log('Auto-sync stopped');
     }
-
-    recordSyncTime() {
-        this.lastSyncTime = Date.now();
-    }
-
-    async triggerInstantSync(action = 'unknown') {
-        if (googleDriveManager.isSignedIn && !googleDriveManager.syncInProgress) {
-            console.log(`🚀 Instant sync triggered by: ${action}`);
-            updateSyncStatus('syncing');
-            
-            const success = await googleDriveManager.uploadGameData(gameManager);
-            
-            if (success) {
-                this.recordSyncTime();
-                gameManager.hasUnsavedChanges = false;
-                console.log(`✅ Instant sync completed for: ${action}`);
-                showNotification(`${action} - 已同步`, 'success', 2000);
-                updateSyncStatus('synced');
-            } else {
-                console.log(`❌ Instant sync failed for: ${action}`);
-                showNotification('同步失敗，將自動重試', 'warning', 3000);
-                updateSyncStatus('error');
-            }
-            
-            return success;
-        }
-        return false;
-    }
 }
 
 // Initialize Google Drive Manager and Auto Sync
 const googleDriveManager = new GoogleDriveManager();
 const autoSync = new AutoSync();
-
-// Enhanced Data Management with Instant Sync
-function markDataChanged(triggerInstantSync = false, action = '') {
-    gameManager.hasUnsavedChanges = true;
-    saveGameManager();
-    
-    if (triggerInstantSync && action && googleDriveManager.isSignedIn) {
-        // 使用延遲確保資料已保存
-        setTimeout(() => {
-            autoSync.triggerInstantSync(action);
-        }, 100);
-    }
-}
 
 // Game State Management
 let gameManager = {
@@ -854,7 +992,7 @@ let editingRecord = { roundNumber: null, playerId: null };
 
 // Google Drive API Functions - Updated for GIS
 window.signInGoogle = function() {
-    console.log('Sign in button clicked');
+    console.log('📱 Sign in button clicked');
     googleDriveManager.signIn();
 };
 
@@ -1279,7 +1417,7 @@ function updateGameLockStatus() {
     }
 }
 
-// Create Game Functions - Fixed with Instant Sync
+// Create Game Functions - Fixed
 window.createNewGame = function() {
     console.log('Creating new game...');
     const modal = document.getElementById('createGameModal');
@@ -1364,9 +1502,7 @@ window.confirmCreateGame = function() {
     gameManager.currentGameId = gameId;
     gameState = newGame.gameData;
     
-    // Trigger instant sync for game creation
-    markDataChanged(true, `創建遊戲: ${gameName}`);
-    
+    autoSave();
     closeCreateGameModal();
     showPlayerSetup();
     showNotification('遊戲創建成功', 'success');
@@ -1385,19 +1521,25 @@ function updateSyncStatus(status = 'success') {
     
     indicator.className = 'sync-indicator';
     
-    if (status === 'syncing') {
+    if (status === 'connecting') {
+        indicator.classList.add('syncing');
+        statusText.textContent = '正在連接...';
+    } else if (status === 'syncing') {
         indicator.classList.add('syncing');
         statusText.textContent = '同步中...';
     } else if (status === 'error') {
         indicator.classList.add('error');
-        statusText.textContent = '同步失敗';
+        statusText.textContent = '連接失敗';
+    } else if (status === 'signed_out') {
+        indicator.classList.add('offline');
+        statusText.textContent = '未登入Google Drive';
     } else if (!googleDriveManager.isSignedIn) {
         indicator.classList.add('offline');
         statusText.textContent = '未登入Google Drive';
     } else {
         const lastSync = new Date(cloudConfig.lastSyncTime);
         const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
-        statusText.textContent = minutesAgo < 1 ? '剛剛同步' : `${minutesAgo}分鐘前同步`;
+        statusText.textContent = minutesAgo < 1 ? '雲端已同步' : `${minutesAgo}分鐘前同步`;
     }
 }
 
@@ -1417,17 +1559,10 @@ function autoSave() {
         }
     }
     
-    saveGameManager();
     console.log('Game auto-saved');
 }
 
-function saveGameManager() {
-    // This would typically save to localStorage or similar
-    // For now, it's just a placeholder
-    console.log('GameManager saved');
-}
-
-// Player Setup Functions - Enhanced with Instant Sync
+// Player Setup Functions
 function showPlayerSetup() {
     console.log('Showing player setup screen');
     showScreen('playerSetupScreen');
@@ -1479,43 +1614,19 @@ window.addPlayer = function() {
     
     gameState.players.push(player);
     input.value = '';
-    
-    // Update current game and trigger instant sync
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        
-        // Trigger instant sync
-        markDataChanged(true, `新增玩家: ${name}`);
-    }
-    
     updatePlayerList();
     updateConfirmButton();
-    console.log('✅ Added player:', name);
+    autoSave();
 };
 
 window.removePlayer = function(playerId) {
     if (!gameState) return;
     
-    const player = gameState.players.find(p => p.id === playerId);
-    const playerName = player ? player.name : '未知玩家';
-    
     console.log('Removing player:', playerId);
     gameState.players = gameState.players.filter(player => player.id !== playerId);
-    
-    // Update current game and trigger instant sync
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        
-        // Trigger instant sync
-        markDataChanged(true, `移除玩家: ${playerName}`);
-    }
-    
     updatePlayerList();
     updateConfirmButton();
+    autoSave();
 };
 
 function updatePlayerList() {
@@ -1554,21 +1665,11 @@ window.confirmPlayers = function() {
     gameState.gameStarted = true;
     gameState.gameCreatedAt = new Date().toISOString();
     gameState.lastModified = new Date().toISOString();
-    
-    // Update current game and trigger instant sync
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].lastModified = gameState.lastModified;
-        
-        // Trigger instant sync
-        markDataChanged(true, '遊戲開始');
-    }
-    
-    showNotification(`遊戲開始！玩家: ${gameState.players.map(p => p.name).join(', ')}`, 'success');
+    autoSave();
     showBankerSelection();
 };
 
-// Settings Functions - Enhanced with Instant Sync
+// Settings Functions
 window.showSettings = function() {
     console.log('Showing settings screen');
     showScreen('settingsScreen');
@@ -1592,20 +1693,10 @@ function updateSettingsDisplay() {
 window.updateBankerRounds = function(rounds) {
     if (!gameState) return;
     
-    const oldRounds = gameState.customBankerRounds;
     gameState.customBankerRounds = parseInt(rounds);
     gameState.defaultBankerRounds = parseInt(rounds);
-    
-    // Update current game and trigger instant sync
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        
-        // Trigger instant sync for important game setting changes
-        markDataChanged(true, `莊家輪數: ${oldRounds}→${rounds}`);
-    }
-    
     updateBankerRoundsDisplay();
+    autoSave();
 };
 
 window.updateUserName = function(name) {
@@ -1673,7 +1764,6 @@ window.selectBanker = function(playerId) {
     console.log('Selecting banker:', playerId);
     if (!gameState) return;
     
-    const oldBankerId = gameState.currentBankerId;
     gameState.currentBankerId = playerId;
     
     const banker = gameState.players.find(p => p.id === playerId);
@@ -1708,16 +1798,7 @@ window.selectBanker = function(playerId) {
     }
     
     gameState.lastModified = new Date().toISOString();
-    
-    // Update current game and trigger instant sync for banker changes
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].lastModified = gameState.lastModified;
-        
-        // Trigger instant sync
-        markDataChanged(true, `第${gameState.currentRound}輪莊家: ${banker.name}`);
-    }
-    
+    autoSave();
     showRecord();
 };
 
@@ -1821,7 +1902,7 @@ function addFloatingActionButton() {
     }
 }
 
-// Next Round Logic - Enhanced with Instant Sync
+// Next Round Logic
 window.nextRound = function() {
     if (!gameState) return;
     
@@ -1843,22 +1924,9 @@ window.nextRound = function() {
         banker.bankerRounds++;
     }
     
-    const previousRound = gameState.currentRound;
     gameState.currentRound++;
     gameState.lastModified = new Date().toISOString();
-    
-    // Update current game and trigger instant sync for next round
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        gameManager.games[gameManager.currentGameId].roundCount = gameState.currentRound;
-        
-        // Important: Trigger instant sync for round completion
-        markDataChanged(true, `第${previousRound}輪完成`);
-    }
-    
-    // Update UI
-    showNotification(`進入第 ${gameState.currentRound} 輪`, 'info');
+    autoSave();
     
     if (banker && banker.bankerRounds % gameState.customBankerRounds === 0) {
         gameState.currentBankerId = null;
@@ -1867,30 +1935,6 @@ window.nextRound = function() {
         selectBanker(gameState.currentBankerId);
     }
 };
-
-// Record Player Score Function - Enhanced with Instant Sync
-function recordPlayerScore(playerId, score) {
-    const player = gameState.players.find(p => p.id === playerId);
-    if (player) {
-        const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
-        if (currentRound) {
-            const record = currentRound.records.find(r => r.playerId === playerId);
-            if (record) {
-                record.amount = score;
-                record.completed = true;
-            }
-        }
-        
-        // Update current game and trigger instant sync
-        if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-            gameManager.games[gameManager.currentGameId].gameData = gameState;
-            gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-            
-            // Trigger instant sync for score recording
-            markDataChanged(true, `${player.name}記分完成`);
-        }
-    }
-}
 
 // Modal Functions (Amount Input)
 function openAmountModal(playerId) {
@@ -1951,15 +1995,13 @@ window.confirmAmount = function() {
     record.completed = true;
     
     gameState.lastModified = new Date().toISOString();
-    
-    // Record player score with instant sync
-    recordPlayerScore(currentRecordingPlayerId, amount);
+    autoSave();
     
     closeAmountModal();
     updateRecordScreen();
 };
 
-// Add Player Modal - Enhanced with Instant Sync
+// Add Player Modal
 function openAddPlayerModal() {
     const input = document.getElementById('newPlayerNameInput');
     const modal = document.getElementById('addPlayerModal');
@@ -2027,16 +2069,7 @@ window.confirmAddPlayer = function() {
     }
     
     gameState.lastModified = new Date().toISOString();
-    
-    // Update current game and trigger instant sync
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        
-        // Trigger instant sync
-        markDataChanged(true, `遊戲中新增: ${name}`);
-    }
+    autoSave();
     
     closeAddPlayerModal();
     updateRecordScreen();
@@ -2168,9 +2201,6 @@ window.confirmEditRecord = function() {
     const record = round.records.find(r => r.playerId === editingRecord.playerId);
     if (!record) return;
     
-    const player = gameState.players.find(p => p.id === editingRecord.playerId);
-    const playerName = player ? player.name : '未知玩家';
-    
     record.amount = amount;
     record.completed = true;
     
@@ -2178,15 +2208,7 @@ window.confirmEditRecord = function() {
     recalculatePlayerTotals();
     
     gameState.lastModified = new Date().toISOString();
-    
-    // Update current game and trigger instant sync for record edits
-    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
-        gameManager.games[gameManager.currentGameId].gameData = gameState;
-        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
-        
-        // Trigger instant sync
-        markDataChanged(true, `修改記錄: ${playerName}`);
-    }
+    autoSave();
     
     closeEditRecordModal();
     updateDetailedRecords();
@@ -2363,8 +2385,8 @@ window.saveGame = function() {
     }
 };
 
-// Enhanced Toast Notifications with duration support
-function showNotification(message, type = 'success', duration = 4000) {
+// Toast Notifications
+function showNotification(message, type = 'success', duration = 3000) {
     const toast = document.getElementById('successToast');
     const messageEl = document.getElementById('toastMessage');
     
@@ -2459,22 +2481,26 @@ function initializeEventListeners() {
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('DOM loaded, initializing app...');
+    console.log('🚀 DOM loaded, initializing app...');
+    console.log('📱 Device detection:', isMobileDevice() ? 'Mobile' : 'Desktop');
+    console.log('📱 Screen width:', window.innerWidth);
+    console.log('📱 User agent:', navigator.userAgent.substring(0, 50) + '...');
     
     initializeEventListeners();
     detectOnlineStatus();
     
-    // Initialize Google Drive with delay to ensure libraries are loaded
+    // Show welcome screen first
+    showWelcome();
+    
+    // Initialize Google Drive after a short delay to ensure DOM is ready
     setTimeout(async () => {
         try {
+            console.log('⏰ Starting delayed Google Drive initialization...');
             await googleDriveManager.initialize();
-            console.log('Google Drive initialization completed');
         } catch (error) {
-            console.log('Google Drive initialization failed:', error);
+            console.log('❌ Google Drive initialization failed:', error);
         }
-    }, 1000);
-    
-    showWelcome();
+    }, 2000); // Increased to 2 seconds
     
     // Auto-sync timer
     setInterval(() => {
@@ -2485,4 +2511,4 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 60000); // Update every minute
 });
 
-console.log('Enhanced script loaded with Instant Sync functionality');
+console.log('📱 Enhanced script loaded with Mobile-Optimized Google Identity Services (GIS) integration');

@@ -6,7 +6,7 @@
     <title>記數app - 升級版遊戲管理系統</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Updated Google API Scripts for Google Identity Services -->
+    <!-- Updated Google API Scripts for Mobile-Optimized Google Identity Services -->
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
 </head>
@@ -18,7 +18,7 @@
                 <h1 class="welcome-title">記數app</h1>
                 <p class="welcome-subtitle">升級版多遊戲管理系統</p>
                 
-                <!-- Google Authentication Section -->
+                <!-- Google Authentication Section - Enhanced for Mobile -->
                 <div class="google-auth-section">
                     <div id="googleSignInButton" class="google-signin-container hidden">
                         <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
@@ -26,6 +26,15 @@
                             使用Google帳號登入
                         </button>
                     </div>
+                    
+                    <!-- Manual Sign-in Button for Mobile Fallback -->
+                    <div id="manualSignInBtn" class="hidden">
+                        <button class="btn btn--primary btn--lg btn--full-width" onclick="signInGoogle()">
+                            <span class="google-icon">G</span>
+                            手動登入Google帳號
+                        </button>
+                    </div>
+                    
                     <div id="googleUserInfo" class="google-user-info hidden">
                         <div class="user-avatar-container">
                             <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
@@ -52,8 +61,7 @@
                 </div>
 
                 <div class="api-config-notice">
-                    <p class="config-warning">✅ Google Drive API 已配置</p>
-                    <p class="instant-sync-notice">🚀 即時同步功能已啟用</p>
+                    <p class="config-warning">✅ Google Drive API 已配置 (支援手機版)</p>
                 </div>
             </div>
         </div>
@@ -134,23 +142,11 @@
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Google Drive 同步</div>
-                        <div class="setting-description">自動同步遊戲數據到雲端</div>
+                        <div class="setting-description">自動同步遊戲數據到雲端 (支援手機版)</div>
                     </div>
                     <div class="google-drive-controls">
                         <button id="googleDriveToggle" class="btn btn--sm" onclick="toggleGoogleDriveSync()">啟用</button>
                         <span id="lastSyncTime" class="last-sync-time"></span>
-                    </div>
-                </div>
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">即時同步</div>
-                        <div class="setting-description">重要動作時自動即時同步</div>
-                    </div>
-                    <div class="instant-sync-info">
-                        <span class="sync-feature-status">✅ 已啟用</span>
-                        <div class="sync-triggers">
-                            <small>觸發時機: 下一輪、記分、玩家變更</small>
-                        </div>
                     </div>
                 </div>
                 <div class="setting-item">
@@ -212,11 +208,8 @@
                     </div>
                     <span class="progress-text" id="progressText">正在同步...</span>
                 </div>
-                <div class="instant-sync-indicator" id="instantSyncIndicator">
-                    <span class="sync-status-text">即時同步已啟用</span>
-                </div>
                 <div class="player-record-list" id="playerRecordList"></div>
-                <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪 🚀</button>
+                <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪</button>
             </div>
             <div class="bottom-nav">
                 <button class="nav-item active" onclick="showRecord()">
@@ -358,9 +351,6 @@
                     <label class="form-label">金額 (正數為贏，負數為輸)</label>
                     <input type="number" id="amountInput" class="form-control" placeholder="輸入整數金額">
                 </div>
-                <div class="instant-sync-note">
-                    <small>💡 記分完成後將自動同步至雲端</small>
-                </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeAmountModal()">取消</button>
                     <button class="btn btn--primary" onclick="confirmAmount()">確認</button>
@@ -381,9 +371,6 @@
                     <label class="form-label">金額 (正數為贏，負數為輸)</label>
                     <input type="number" id="editAmountInput" class="form-control" placeholder="輸入整數金額">
                 </div>
-                <div class="instant-sync-note">
-                    <small>💡 修改完成後將自動同步至雲端</small>
-                </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeEditRecordModal()">取消</button>
                     <button class="btn btn--primary" onclick="confirmEditRecord()">確認修改</button>
@@ -403,9 +390,6 @@
                 <div class="form-group">
                     <label class="form-label">玩家名稱</label>
                     <input type="text" id="newPlayerNameInput" class="form-control" placeholder="輸入玩家名稱" maxlength="20">
-                </div>
-                <div class="instant-sync-note">
-                    <small>💡 新增玩家後將自動同步至雲端</small>
                 </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeAddPlayerModal()">取消</button>
@@ -443,7 +427,7 @@
         </div>
     </div>
 
-    <!-- Success Toast with Enhanced Notifications -->
+    <!-- Success Toast -->
     <div id="successToast" class="toast hidden">
         <span id="toastMessage">操作成功</span>
     </div>
@@ -451,14 +435,6 @@
     <!-- Offline Indicator -->
     <div id="offlineIndicator" class="offline-indicator hidden">
         <span>⚠️ 離線模式 - 數據將在網路恢復後同步</span>
-    </div>
-
-    <!-- Instant Sync Notification -->
-    <div id="instantSyncNotification" class="instant-sync-notification hidden">
-        <div class="sync-notification-content">
-            <span class="sync-icon">🚀</span>
-            <span class="sync-message">正在即時同步...</span>
-        </div>
     </div>
 
     <script src="app.js"></script>
