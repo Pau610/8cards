@@ -962,16 +962,16 @@ select.form-control {
 .api-config-notice {
     margin-top: var(--space-24);
     padding: var(--space-16);
-    background: var(--color-bg-2);
-    border: 1px solid var(--color-warning);
+    background: var(--color-bg-3);
+    border: 1px solid var(--color-success);
     border-radius: var(--radius-base);
     text-align: center;
 }
 
 .config-warning {
     font-size: var(--font-size-sm);
-    color: var(--color-warning);
-    margin-bottom: var(--space-8);
+    color: var(--color-success);
+    margin-bottom: 0;
 }
 
 /* Cloud Sync Status */
@@ -1690,35 +1690,6 @@ select.form-control {
 
 .modal-actions .btn {
     flex: 1;
-}
-
-/* API Configuration Modal */
-.config-instructions {
-    margin-bottom: var(--space-16);
-    padding: var(--space-16);
-    background: var(--color-bg-8);
-    border-radius: var(--radius-base);
-}
-
-.config-instructions h4 {
-    margin-bottom: var(--space-8);
-    color: var(--color-text);
-}
-
-.config-instructions ol {
-    margin: 0;
-    padding-left: var(--space-20);
-}
-
-.config-instructions li {
-    margin-bottom: var(--space-4);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-}
-
-.config-instructions a {
-    color: var(--color-primary);
-    text-decoration: underline;
 }
 
 /* Conflict Resolution Modal */

@@ -6,7 +6,7 @@
     <title>記數app - 升級版遊戲管理系統</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Google API Scripts -->
+    <!-- Updated Google API Scripts for Google Identity Services -->
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
 </head>
@@ -52,8 +52,7 @@
                 </div>
 
                 <div class="api-config-notice">
-                    <p class="config-warning">⚠️ 需要配置Google Drive API金鑰才能使用雲端同步功能</p>
-                    <button class="btn btn--outline btn--sm" onclick="showApiConfigModal()">配置API</button>
+                    <p class="config-warning">✅ Google Drive API 已配置</p>
                 </div>
             </div>
         </div>
@@ -326,41 +325,6 @@
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeCreateGameModal()">取消</button>
                     <button class="btn btn--primary" onclick="confirmCreateGame()">創建</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- API Configuration Modal -->
-    <div id="apiConfigModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Google Drive API 配置</h3>
-                <button class="modal-close" onclick="closeApiConfigModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="config-instructions">
-                    <h4>配置步驟：</h4>
-                    <ol>
-                        <li>前往 <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
-                        <li>創建新專案或選擇現有專案</li>
-                        <li>啟用 Google Drive API</li>
-                        <li>創建憑證（API金鑰和OAuth 2.0用戶端ID）</li>
-                        <li>設定授權的JavaScript來源網域</li>
-                        <li>將憑證填入下方欄位</li>
-                    </ol>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">API 金鑰</label>
-                    <input type="text" id="apiKeyInput" class="form-control" placeholder="輸入您的Google Drive API金鑰">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">OAuth 2.0 用戶端ID</label>
-                    <input type="text" id="clientIdInput" class="form-control" placeholder="輸入您的OAuth 2.0用戶端ID">
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn--secondary" onclick="closeApiConfigModal()">取消</button>
-                    <button class="btn btn--primary" onclick="saveApiConfig()">保存配置</button>
                 </div>
             </div>
         </div>
