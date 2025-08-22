@@ -53,6 +53,7 @@
 
                 <div class="api-config-notice">
                     <p class="config-warning">✅ Google Drive API 已配置</p>
+                    <p class="instant-sync-notice">🚀 即時同步功能已啟用</p>
                 </div>
             </div>
         </div>
@@ -142,6 +143,18 @@
                 </div>
                 <div class="setting-item">
                     <div class="setting-info">
+                        <div class="setting-title">即時同步</div>
+                        <div class="setting-description">重要動作時自動即時同步</div>
+                    </div>
+                    <div class="instant-sync-info">
+                        <span class="sync-feature-status">✅ 已啟用</span>
+                        <div class="sync-triggers">
+                            <small>觸發時機: 下一輪、記分、玩家變更</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
                         <div class="setting-title">莊家輪數</div>
                         <div class="setting-description">每位玩家當莊家的輪數</div>
                     </div>
@@ -199,8 +212,11 @@
                     </div>
                     <span class="progress-text" id="progressText">正在同步...</span>
                 </div>
+                <div class="instant-sync-indicator" id="instantSyncIndicator">
+                    <span class="sync-status-text">即時同步已啟用</span>
+                </div>
                 <div class="player-record-list" id="playerRecordList"></div>
-                <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪</button>
+                <button class="btn btn--primary btn--lg btn--full-width" id="nextRoundBtn" onclick="nextRound()" disabled>下一輪 🚀</button>
             </div>
             <div class="bottom-nav">
                 <button class="nav-item active" onclick="showRecord()">
@@ -342,6 +358,9 @@
                     <label class="form-label">金額 (正數為贏，負數為輸)</label>
                     <input type="number" id="amountInput" class="form-control" placeholder="輸入整數金額">
                 </div>
+                <div class="instant-sync-note">
+                    <small>💡 記分完成後將自動同步至雲端</small>
+                </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeAmountModal()">取消</button>
                     <button class="btn btn--primary" onclick="confirmAmount()">確認</button>
@@ -362,6 +381,9 @@
                     <label class="form-label">金額 (正數為贏，負數為輸)</label>
                     <input type="number" id="editAmountInput" class="form-control" placeholder="輸入整數金額">
                 </div>
+                <div class="instant-sync-note">
+                    <small>💡 修改完成後將自動同步至雲端</small>
+                </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeEditRecordModal()">取消</button>
                     <button class="btn btn--primary" onclick="confirmEditRecord()">確認修改</button>
@@ -381,6 +403,9 @@
                 <div class="form-group">
                     <label class="form-label">玩家名稱</label>
                     <input type="text" id="newPlayerNameInput" class="form-control" placeholder="輸入玩家名稱" maxlength="20">
+                </div>
+                <div class="instant-sync-note">
+                    <small>💡 新增玩家後將自動同步至雲端</small>
                 </div>
                 <div class="modal-actions">
                     <button class="btn btn--secondary" onclick="closeAddPlayerModal()">取消</button>
@@ -418,7 +443,7 @@
         </div>
     </div>
 
-    <!-- Success Toast -->
+    <!-- Success Toast with Enhanced Notifications -->
     <div id="successToast" class="toast hidden">
         <span id="toastMessage">操作成功</span>
     </div>
@@ -426,6 +451,14 @@
     <!-- Offline Indicator -->
     <div id="offlineIndicator" class="offline-indicator hidden">
         <span>⚠️ 離線模式 - 數據將在網路恢復後同步</span>
+    </div>
+
+    <!-- Instant Sync Notification -->
+    <div id="instantSyncNotification" class="instant-sync-notification hidden">
+        <div class="sync-notification-content">
+            <span class="sync-icon">🚀</span>
+            <span class="sync-message">正在即時同步...</span>
+        </div>
     </div>
 
     <script src="app.js"></script>

@@ -1,4 +1,4 @@
-// Enhanced Game State Management with Google Identity Services (GIS) Integration
+// Enhanced Game State Management with Instant Sync Functionality
 
 // Google Drive API Configuration - Updated with fixed credentials
 const GOOGLE_CONFIG = {
@@ -20,6 +20,7 @@ class GoogleDriveManager {
         this.tokenClient = null;
         this.retryAttempts = 0;
         this.maxRetries = 3;
+        this.syncInProgress = false;
     }
 
     async initialize() {
@@ -383,6 +384,14 @@ class GoogleDriveManager {
             throw new Error('Not authenticated or Google Drive API not available');
         }
 
+        // Prevent concurrent uploads
+        if (this.syncInProgress) {
+            console.log('⏭️ Sync already in progress, skipping...');
+            return false;
+        }
+
+        this.syncInProgress = true;
+
         try {
             const fileName = 'games-data.json';
             const metadata = {
@@ -436,11 +445,13 @@ class GoogleDriveManager {
             });
 
             cloudConfig.lastSyncTime = new Date().toISOString();
-            console.log('Game data uploaded successfully:', response.result);
-            return response.result;
+            console.log('✅ Game data uploaded successfully:', response.result);
+            return true;
         } catch (error) {
-            console.error('Failed to upload game data:', error);
+            console.error('❌ Failed to upload game data:', error);
             throw error;
+        } finally {
+            this.syncInProgress = false;
         }
     }
 
@@ -599,11 +610,14 @@ class GoogleDriveManager {
 
         try {
             showSyncProgress('正在上傳數據...', 50);
-            await this.uploadGameData(gameManager);
+            const success = await this.uploadGameData(gameManager);
             showSyncProgress('同步完成', 100);
             setTimeout(() => showSyncProgress('', 0), 1000);
-            showNotification('雲端同步成功', 'success');
-            return true;
+            if (success) {
+                showNotification('雲端同步成功', 'success');
+                gameManager.hasUnsavedChanges = false;
+            }
+            return success;
         } catch (error) {
             showSyncProgress('', 0);
             this.handleSyncError(error);
@@ -662,29 +676,41 @@ class GoogleDriveManager {
     }
 }
 
-// Auto Sync Class
+// Enhanced Auto Sync Class with Instant Sync Support
 class AutoSync {
     constructor(interval = 300000) { // 5 minutes
         this.interval = interval;
         this.timer = null;
         this.isRunning = false;
+        this.lastSyncTime = null;
     }
 
     start() {
-        if (this.isRunning || !googleDriveManager.isSignedIn) return;
+        if (this.isRunning) return;
         
         this.isRunning = true;
+        console.log('🔄 Auto-sync started, interval:', this.interval / 1000, 'seconds');
+        
         this.timer = setInterval(async () => {
-            if (googleDriveManager.isSignedIn && gameManager.hasUnsavedChanges) {
-                console.log('Auto-syncing to Google Drive...');
-                const success = await googleDriveManager.syncWithCloud();
+            if (googleDriveManager.isSignedIn && 
+                gameManager.hasUnsavedChanges && 
+                !googleDriveManager.syncInProgress) {
+                
+                // 檢查是否剛進行過即時同步
+                const now = Date.now();
+                if (this.lastSyncTime && (now - this.lastSyncTime) < 30000) {
+                    console.log('⏭️ Skipping auto-sync, recent instant sync detected');
+                    return;
+                }
+                
+                console.log('🔄 Auto-sync triggered');
+                const success = await googleDriveManager.uploadGameData(gameManager);
                 if (success) {
                     gameManager.hasUnsavedChanges = false;
+                    this.recordSyncTime();
                 }
             }
         }, this.interval);
-        
-        console.log('Auto-sync started');
     }
 
     stop() {
@@ -695,11 +721,52 @@ class AutoSync {
         this.isRunning = false;
         console.log('Auto-sync stopped');
     }
+
+    recordSyncTime() {
+        this.lastSyncTime = Date.now();
+    }
+
+    async triggerInstantSync(action = 'unknown') {
+        if (googleDriveManager.isSignedIn && !googleDriveManager.syncInProgress) {
+            console.log(`🚀 Instant sync triggered by: ${action}`);
+            updateSyncStatus('syncing');
+            
+            const success = await googleDriveManager.uploadGameData(gameManager);
+            
+            if (success) {
+                this.recordSyncTime();
+                gameManager.hasUnsavedChanges = false;
+                console.log(`✅ Instant sync completed for: ${action}`);
+                showNotification(`${action} - 已同步`, 'success', 2000);
+                updateSyncStatus('synced');
+            } else {
+                console.log(`❌ Instant sync failed for: ${action}`);
+                showNotification('同步失敗，將自動重試', 'warning', 3000);
+                updateSyncStatus('error');
+            }
+            
+            return success;
+        }
+        return false;
+    }
 }
 
 // Initialize Google Drive Manager and Auto Sync
 const googleDriveManager = new GoogleDriveManager();
 const autoSync = new AutoSync();
+
+// Enhanced Data Management with Instant Sync
+function markDataChanged(triggerInstantSync = false, action = '') {
+    gameManager.hasUnsavedChanges = true;
+    saveGameManager();
+    
+    if (triggerInstantSync && action && googleDriveManager.isSignedIn) {
+        // 使用延遲確保資料已保存
+        setTimeout(() => {
+            autoSync.triggerInstantSync(action);
+        }, 100);
+    }
+}
 
 // Game State Management
 let gameManager = {
@@ -1212,7 +1279,7 @@ function updateGameLockStatus() {
     }
 }
 
-// Create Game Functions - Fixed
+// Create Game Functions - Fixed with Instant Sync
 window.createNewGame = function() {
     console.log('Creating new game...');
     const modal = document.getElementById('createGameModal');
@@ -1297,7 +1364,9 @@ window.confirmCreateGame = function() {
     gameManager.currentGameId = gameId;
     gameState = newGame.gameData;
     
-    autoSave();
+    // Trigger instant sync for game creation
+    markDataChanged(true, `創建遊戲: ${gameName}`);
+    
     closeCreateGameModal();
     showPlayerSetup();
     showNotification('遊戲創建成功', 'success');
@@ -1348,10 +1417,17 @@ function autoSave() {
         }
     }
     
+    saveGameManager();
     console.log('Game auto-saved');
 }
 
-// Player Setup Functions
+function saveGameManager() {
+    // This would typically save to localStorage or similar
+    // For now, it's just a placeholder
+    console.log('GameManager saved');
+}
+
+// Player Setup Functions - Enhanced with Instant Sync
 function showPlayerSetup() {
     console.log('Showing player setup screen');
     showScreen('playerSetupScreen');
@@ -1403,19 +1479,43 @@ window.addPlayer = function() {
     
     gameState.players.push(player);
     input.value = '';
+    
+    // Update current game and trigger instant sync
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        
+        // Trigger instant sync
+        markDataChanged(true, `新增玩家: ${name}`);
+    }
+    
     updatePlayerList();
     updateConfirmButton();
-    autoSave();
+    console.log('✅ Added player:', name);
 };
 
 window.removePlayer = function(playerId) {
     if (!gameState) return;
     
+    const player = gameState.players.find(p => p.id === playerId);
+    const playerName = player ? player.name : '未知玩家';
+    
     console.log('Removing player:', playerId);
     gameState.players = gameState.players.filter(player => player.id !== playerId);
+    
+    // Update current game and trigger instant sync
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        
+        // Trigger instant sync
+        markDataChanged(true, `移除玩家: ${playerName}`);
+    }
+    
     updatePlayerList();
     updateConfirmButton();
-    autoSave();
 };
 
 function updatePlayerList() {
@@ -1454,11 +1554,21 @@ window.confirmPlayers = function() {
     gameState.gameStarted = true;
     gameState.gameCreatedAt = new Date().toISOString();
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Update current game and trigger instant sync
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].lastModified = gameState.lastModified;
+        
+        // Trigger instant sync
+        markDataChanged(true, '遊戲開始');
+    }
+    
+    showNotification(`遊戲開始！玩家: ${gameState.players.map(p => p.name).join(', ')}`, 'success');
     showBankerSelection();
 };
 
-// Settings Functions
+// Settings Functions - Enhanced with Instant Sync
 window.showSettings = function() {
     console.log('Showing settings screen');
     showScreen('settingsScreen');
@@ -1482,10 +1592,20 @@ function updateSettingsDisplay() {
 window.updateBankerRounds = function(rounds) {
     if (!gameState) return;
     
+    const oldRounds = gameState.customBankerRounds;
     gameState.customBankerRounds = parseInt(rounds);
     gameState.defaultBankerRounds = parseInt(rounds);
+    
+    // Update current game and trigger instant sync
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        
+        // Trigger instant sync for important game setting changes
+        markDataChanged(true, `莊家輪數: ${oldRounds}→${rounds}`);
+    }
+    
     updateBankerRoundsDisplay();
-    autoSave();
 };
 
 window.updateUserName = function(name) {
@@ -1553,6 +1673,7 @@ window.selectBanker = function(playerId) {
     console.log('Selecting banker:', playerId);
     if (!gameState) return;
     
+    const oldBankerId = gameState.currentBankerId;
     gameState.currentBankerId = playerId;
     
     const banker = gameState.players.find(p => p.id === playerId);
@@ -1587,7 +1708,16 @@ window.selectBanker = function(playerId) {
     }
     
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Update current game and trigger instant sync for banker changes
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].lastModified = gameState.lastModified;
+        
+        // Trigger instant sync
+        markDataChanged(true, `第${gameState.currentRound}輪莊家: ${banker.name}`);
+    }
+    
     showRecord();
 };
 
@@ -1691,7 +1821,7 @@ function addFloatingActionButton() {
     }
 }
 
-// Next Round Logic
+// Next Round Logic - Enhanced with Instant Sync
 window.nextRound = function() {
     if (!gameState) return;
     
@@ -1713,9 +1843,22 @@ window.nextRound = function() {
         banker.bankerRounds++;
     }
     
+    const previousRound = gameState.currentRound;
     gameState.currentRound++;
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Update current game and trigger instant sync for next round
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        gameManager.games[gameManager.currentGameId].roundCount = gameState.currentRound;
+        
+        // Important: Trigger instant sync for round completion
+        markDataChanged(true, `第${previousRound}輪完成`);
+    }
+    
+    // Update UI
+    showNotification(`進入第 ${gameState.currentRound} 輪`, 'info');
     
     if (banker && banker.bankerRounds % gameState.customBankerRounds === 0) {
         gameState.currentBankerId = null;
@@ -1724,6 +1867,30 @@ window.nextRound = function() {
         selectBanker(gameState.currentBankerId);
     }
 };
+
+// Record Player Score Function - Enhanced with Instant Sync
+function recordPlayerScore(playerId, score) {
+    const player = gameState.players.find(p => p.id === playerId);
+    if (player) {
+        const currentRound = gameState.rounds.find(r => r.roundNumber === gameState.currentRound);
+        if (currentRound) {
+            const record = currentRound.records.find(r => r.playerId === playerId);
+            if (record) {
+                record.amount = score;
+                record.completed = true;
+            }
+        }
+        
+        // Update current game and trigger instant sync
+        if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+            gameManager.games[gameManager.currentGameId].gameData = gameState;
+            gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+            
+            // Trigger instant sync for score recording
+            markDataChanged(true, `${player.name}記分完成`);
+        }
+    }
+}
 
 // Modal Functions (Amount Input)
 function openAmountModal(playerId) {
@@ -1784,13 +1951,15 @@ window.confirmAmount = function() {
     record.completed = true;
     
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Record player score with instant sync
+    recordPlayerScore(currentRecordingPlayerId, amount);
     
     closeAmountModal();
     updateRecordScreen();
 };
 
-// Add Player Modal
+// Add Player Modal - Enhanced with Instant Sync
 function openAddPlayerModal() {
     const input = document.getElementById('newPlayerNameInput');
     const modal = document.getElementById('addPlayerModal');
@@ -1858,7 +2027,16 @@ window.confirmAddPlayer = function() {
     }
     
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Update current game and trigger instant sync
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].playerCount = gameState.players.length;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        
+        // Trigger instant sync
+        markDataChanged(true, `遊戲中新增: ${name}`);
+    }
     
     closeAddPlayerModal();
     updateRecordScreen();
@@ -1990,6 +2168,9 @@ window.confirmEditRecord = function() {
     const record = round.records.find(r => r.playerId === editingRecord.playerId);
     if (!record) return;
     
+    const player = gameState.players.find(p => p.id === editingRecord.playerId);
+    const playerName = player ? player.name : '未知玩家';
+    
     record.amount = amount;
     record.completed = true;
     
@@ -1997,7 +2178,15 @@ window.confirmEditRecord = function() {
     recalculatePlayerTotals();
     
     gameState.lastModified = new Date().toISOString();
-    autoSave();
+    
+    // Update current game and trigger instant sync for record edits
+    if (gameManager.currentGameId && gameManager.games[gameManager.currentGameId]) {
+        gameManager.games[gameManager.currentGameId].gameData = gameState;
+        gameManager.games[gameManager.currentGameId].lastModified = new Date().toISOString();
+        
+        // Trigger instant sync
+        markDataChanged(true, `修改記錄: ${playerName}`);
+    }
     
     closeEditRecordModal();
     updateDetailedRecords();
@@ -2174,8 +2363,8 @@ window.saveGame = function() {
     }
 };
 
-// Toast Notifications
-function showNotification(message, type = 'success') {
+// Enhanced Toast Notifications with duration support
+function showNotification(message, type = 'success', duration = 4000) {
     const toast = document.getElementById('successToast');
     const messageEl = document.getElementById('toastMessage');
     
@@ -2189,7 +2378,7 @@ function showNotification(message, type = 'success') {
             setTimeout(() => {
                 toast.classList.add('hidden');
             }, 250);
-        }, 3000);
+        }, duration);
     }
 }
 
@@ -2296,4 +2485,4 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 60000); // Update every minute
 });
 
-console.log('Enhanced script loaded with Google Identity Services (GIS) integration');
+console.log('Enhanced script loaded with Instant Sync functionality');

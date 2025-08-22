@@ -738,7 +738,7 @@ select.form-control {
 }
 
 /* END PERPLEXITY DESIGN SYSTEM */
-/* Enhanced Gambling Score App Styles with Google Drive Integration */
+/* Enhanced Gambling Score App Styles with Instant Sync Features */
 
 .screen {
     min-height: 100vh;
@@ -958,7 +958,7 @@ select.form-control {
     max-width: 300px;
 }
 
-/* API Configuration Notice */
+/* API Configuration Notice - Enhanced */
 .api-config-notice {
     margin-top: var(--space-24);
     padding: var(--space-16);
@@ -971,7 +971,14 @@ select.form-control {
 .config-warning {
     font-size: var(--font-size-sm);
     color: var(--color-success);
+    margin-bottom: var(--space-8);
+}
+
+.instant-sync-notice {
+    font-size: var(--font-size-sm);
+    color: var(--color-primary);
     margin-bottom: 0;
+    font-weight: var(--font-weight-medium);
 }
 
 /* Cloud Sync Status */
@@ -1000,13 +1007,14 @@ select.form-control {
     color: var(--color-error);
 }
 
-/* Sync Progress Indicator */
+/* Enhanced Sync Progress Indicator */
 .sync-progress {
     margin-bottom: var(--space-16);
     padding: var(--space-12);
     background: var(--color-bg-2);
     border: 1px solid var(--color-warning);
     border-radius: var(--radius-base);
+    animation: pulse 2s infinite;
 }
 
 .progress-bar {
@@ -1031,6 +1039,87 @@ select.form-control {
     color: var(--color-text-secondary);
     text-align: center;
     display: block;
+}
+
+/* Instant Sync Indicator */
+.instant-sync-indicator {
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-8) var(--space-12);
+    margin-bottom: var(--space-16);
+    text-align: center;
+}
+
+.sync-status-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+}
+
+/* Instant Sync Notification */
+.instant-sync-notification {
+    position: fixed;
+    top: var(--space-16);
+    right: var(--space-16);
+    background: var(--color-primary);
+    color: var(--color-btn-primary-text);
+    padding: var(--space-12) var(--space-16);
+    border-radius: var(--radius-base);
+    box-shadow: var(--shadow-lg);
+    z-index: 1500;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all var(--duration-normal) var(--ease-standard);
+}
+
+.instant-sync-notification:not(.hidden) {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.sync-notification-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+}
+
+.sync-notification-content .sync-icon {
+    font-size: var(--font-size-lg);
+    animation: rocket 1.5s infinite alternate;
+}
+
+.sync-message {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+@keyframes rocket {
+    from { transform: translateY(0); }
+    to { transform: translateY(-2px); }
+}
+
+/* Settings Screen - Enhanced */
+.instant-sync-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-4);
+}
+
+.sync-feature-status {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-success);
+}
+
+.sync-triggers {
+    text-align: right;
+}
+
+.sync-triggers small {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
 }
 
 /* Game Management */
@@ -1061,6 +1150,7 @@ select.form-control {
 .game-card:hover {
     border-color: var(--color-primary);
     background: var(--color-bg-1);
+    transform: translateY(-1px);
 }
 
 .game-card.locked {
@@ -1092,6 +1182,12 @@ select.form-control {
     right: var(--space-32);
     color: var(--color-info);
     font-size: var(--font-size-lg);
+    animation: float 2s ease-in-out infinite alternate;
+}
+
+@keyframes float {
+    from { transform: translateY(0px); }
+    to { transform: translateY(-3px); }
 }
 
 .game-header {
@@ -1233,6 +1329,12 @@ select.form-control {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.player-item:hover {
+    border-color: var(--color-primary);
+    transform: translateX(2px);
 }
 
 .player-name {
@@ -1248,6 +1350,12 @@ select.form-control {
     padding: var(--space-4) var(--space-8);
     font-size: var(--font-size-sm);
     cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.remove-player:hover {
+    background: var(--color-red-400);
+    transform: scale(1.05);
 }
 
 .setup-actions {
@@ -1324,6 +1432,7 @@ select.form-control {
 .banker-item:hover {
     border-color: var(--color-primary);
     background: var(--color-bg-1);
+    transform: translateX(4px);
 }
 
 .banker-info {
@@ -1350,13 +1459,15 @@ select.form-control {
 
 .banker-total.positive {
     color: var(--color-success);
+    font-weight: var(--font-weight-medium);
 }
 
 .banker-total.negative {
     color: var(--color-error);
+    font-weight: var(--font-weight-medium);
 }
 
-/* Record Screen */
+/* Record Screen - Enhanced */
 .record-content {
     flex: 1;
     display: flex;
@@ -1384,6 +1495,7 @@ select.form-control {
 
 .record-item:hover {
     background: var(--color-bg-2);
+    transform: translateY(-1px);
 }
 
 .record-item.completed {
@@ -1414,6 +1526,7 @@ select.form-control {
 
 .record-status.completed {
     color: var(--color-success);
+    font-weight: var(--font-weight-medium);
 }
 
 .record-amount {
@@ -1431,6 +1544,21 @@ select.form-control {
 
 .amount-value.negative {
     color: var(--color-error);
+}
+
+/* Enhanced Next Round Button */
+#nextRoundBtn {
+    position: relative;
+    overflow: hidden;
+}
+
+#nextRoundBtn:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+#nextRoundBtn:not(:disabled):active {
+    transform: translateY(0);
 }
 
 /* Detailed Records Screen */
@@ -1478,11 +1606,12 @@ select.form-control {
     cursor: pointer;
     padding: var(--space-4) var(--space-8);
     border-radius: var(--radius-sm);
-    transition: background-color var(--duration-fast) var(--ease-standard);
+    transition: all var(--duration-fast) var(--ease-standard);
 }
 
 .editable-amount:hover {
     background: var(--color-bg-3);
+    transform: scale(1.05);
 }
 
 .editable-amount.positive {
@@ -1528,6 +1657,12 @@ select.form-control {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.stats-item:hover {
+    border-color: var(--color-primary);
+    transform: translateX(2px);
 }
 
 .stats-player-info {
@@ -1605,6 +1740,7 @@ select.form-control {
 .nav-item.active {
     color: var(--color-primary);
     background: var(--color-bg-1);
+    transform: translateY(-2px);
 }
 
 .nav-item:hover {
@@ -1621,7 +1757,7 @@ select.form-control {
     font-weight: var(--font-weight-medium);
 }
 
-/* Modal */
+/* Modal - Enhanced */
 .modal {
     position: fixed;
     top: 0;
@@ -1634,6 +1770,7 @@ select.form-control {
     justify-content: center;
     z-index: 1000;
     padding: var(--space-16);
+    backdrop-filter: blur(4px);
 }
 
 .modal.hidden {
@@ -1648,6 +1785,12 @@ select.form-control {
     max-width: 500px;
     max-height: 90vh;
     overflow: hidden;
+    transform: scale(0.95);
+    transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+.modal:not(.hidden) .modal-content {
+    transform: scale(1);
 }
 
 .modal-header {
@@ -1670,10 +1813,12 @@ select.form-control {
     cursor: pointer;
     padding: var(--space-4);
     border-radius: var(--radius-sm);
+    transition: all var(--duration-fast) var(--ease-standard);
 }
 
 .modal-close:hover {
     background: var(--color-secondary);
+    transform: rotate(90deg);
 }
 
 .modal-body {
@@ -1692,6 +1837,21 @@ select.form-control {
     flex: 1;
 }
 
+/* Enhanced Modal Notes */
+.instant-sync-note {
+    margin-top: var(--space-8);
+    padding: var(--space-8);
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    text-align: center;
+}
+
+.instant-sync-note small {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+}
+
 /* Conflict Resolution Modal */
 .conflict-options {
     display: flex;
@@ -1705,6 +1865,11 @@ select.form-control {
     background: var(--color-bg-1);
     border: 1px solid var(--color-card-border);
     border-radius: var(--radius-base);
+    transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.conflict-option:hover {
+    border-color: var(--color-primary);
 }
 
 .conflict-option h4 {
@@ -1718,29 +1883,31 @@ select.form-control {
     color: var(--color-text-secondary);
 }
 
-/* Toast Notifications */
+/* Enhanced Toast Notifications */
 .toast {
     position: fixed;
     top: var(--space-24);
-    left: 50%;
-    transform: translateX(-50%);
+    right: var(--space-24);
     background: var(--color-success);
     color: white;
-    padding: var(--space-12) var(--space-24);
-    border-radius: var(--radius-full);
+    padding: var(--space-12) var(--space-20);
+    border-radius: var(--radius-base);
     font-weight: var(--font-weight-medium);
     box-shadow: var(--shadow-lg);
     z-index: 2000;
-    opacity: 1;
-    transition: opacity var(--duration-normal) var(--ease-standard);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all var(--duration-normal) var(--ease-standard);
 }
 
-.toast.hidden {
-    display: none;
+.toast:not(.hidden) {
+    opacity: 1;
+    transform: translateX(0);
 }
 
 .toast.fade-out {
     opacity: 0;
+    transform: translateX(100%);
 }
 
 .toast.error {
@@ -1749,6 +1916,10 @@ select.form-control {
 
 .toast.warning {
     background: var(--color-warning);
+}
+
+.toast.info {
+    background: var(--color-info);
 }
 
 /* Offline Indicator */
@@ -1770,7 +1941,7 @@ select.form-control {
     display: none;
 }
 
-/* Add Player Button */
+/* Add Player Button - Enhanced */
 .add-player-btn {
     position: fixed;
     bottom: 100px; /* Above bottom nav */
@@ -1785,10 +1956,16 @@ select.form-control {
     cursor: pointer;
     box-shadow: var(--shadow-lg);
     z-index: 99;
+    transition: all var(--duration-fast) var(--ease-standard);
 }
 
 .add-player-btn:hover {
     background: var(--color-primary-hover);
+    transform: scale(1.1);
+}
+
+.add-player-btn:active {
+    transform: scale(0.95);
 }
 
 /* Empty State */
@@ -1803,7 +1980,7 @@ select.form-control {
     color: var(--color-text);
 }
 
-/* Responsive Design */
+/* Responsive Design - Enhanced */
 @media (max-width: 480px) {
     .screen {
         padding: var(--space-12);
@@ -1853,7 +2030,8 @@ select.form-control {
         margin-bottom: var(--space-12);
     }
     
-    .google-drive-controls {
+    .google-drive-controls,
+    .instant-sync-info {
         align-items: stretch;
     }
     
@@ -1886,6 +2064,30 @@ select.form-control {
     .conflict-option {
         padding: var(--space-12);
     }
+    
+    .toast {
+        right: var(--space-8);
+        left: var(--space-8);
+        transform: translateY(-100%);
+    }
+    
+    .toast:not(.hidden) {
+        transform: translateY(0);
+    }
+    
+    .toast.fade-out {
+        transform: translateY(-100%);
+    }
+    
+    .instant-sync-notification {
+        right: var(--space-8);
+        left: var(--space-8);
+        transform: translateY(-100%);
+    }
+    
+    .instant-sync-notification:not(.hidden) {
+        transform: translateY(0);
+    }
 }
 
 /* iOS Safe Area */
@@ -1906,7 +2108,7 @@ select.form-control {
     }
 }
 
-/* Animation for sync indicator */
+/* Enhanced Animations */
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -1917,10 +2119,15 @@ select.form-control {
     animation: pulse var(--duration-normal) infinite;
 }
 
-/* Loading states */
+.sync-indicator-card {
+    animation: pulse 2s infinite;
+}
+
+/* Loading states - Enhanced */
 .loading {
     opacity: 0.6;
     pointer-events: none;
+    position: relative;
 }
 
 .loading::after {
@@ -1939,4 +2146,69 @@ select.form-control {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Special enhanced hover effects */
+.btn--primary:hover {
+    transform: translateY(-1px);
+}
+
+.game-card:hover .game-title {
+    color: var(--color-primary);
+}
+
+/* Success animations */
+@keyframes success-bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-5px);
+    }
+    60% {
+        transform: translateY(-3px);
+    }
+}
+
+.record-item.completed {
+    animation: success-bounce 0.6s ease-out;
+}
+
+/* Instant sync specific styles */
+.instant-sync-enabled {
+    position: relative;
+}
+
+.instant-sync-enabled::after {
+    content: '🚀';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* Focus improvements */
+.btn:focus-visible,
+.form-control:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    .bottom-nav,
+    .add-player-btn,
+    .btn,
+    .modal {
+        display: none !important;
+    }
+    
+    .screen {
+        min-height: auto;
+    }
+    
+    .records-table {
+        page-break-inside: avoid;
+    }
 }
