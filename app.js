@@ -16,13 +16,6 @@ function isMobileDevice() {
     const isMobileUA = mobileRegex.test(userAgent);
     const isMobileScreen = window.innerWidth <= 768;
     const result = isMobileUA || isMobileScreen;
-    console.log('🔍 Device detection:', {
-        userAgent: userAgent.substring(0, 50) + '...',
-        isMobileUA,
-        isMobileScreen,
-        screenWidth: window.innerWidth,
-        result: result ? 'Mobile' : 'Desktop'
-    });
     return result;
 }
 
@@ -47,130 +40,72 @@ class GoogleDriveManager {
     }
 
     async initialize() {
-        if (this.isInitializing) {
-            console.log('⏳ Initialization already in progress...');
-            return false;
-        }
-
+        if (this.isInitializing) return false;
         this.isInitializing = true;
 
         try {
-            console.log('🔍 Starting Google Drive API initialization...');
-            console.log('📱 Device type:', isMobileDevice() ? 'Mobile' : 'Desktop');
-            console.log('🍎 iOS Safari:', isIOSSafari());
-            
-            // 檢查配置
             if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId) {
-                console.log('❌ Google Drive API credentials not configured');
                 this.updateAuthUI();
                 this.isInitializing = false;
                 return false;
             }
 
-            // 等待 Google APIs 載入
             let attempts = 0;
             const maxAttempts = 10;
-            
             while (attempts < maxAttempts) {
-                if (typeof gapi !== 'undefined' && typeof google !== 'undefined') {
-                    console.log('✅ Google APIs detected');
-                    break;
-                }
-                console.log(`⏳ Waiting for Google APIs... (${attempts + 1}/${maxAttempts})`);
+                if (typeof gapi !== 'undefined' && typeof google !== 'undefined') break;
                 await new Promise(resolve => setTimeout(resolve, 500));
                 attempts++;
             }
-
-            if (typeof gapi === 'undefined') {
-                console.log('❌ Google API client not loaded after waiting');
-                showNotification('Google API 載入失敗，請重新整理頁面', 'error');
+            if (typeof gapi === 'undefined' || typeof google === 'undefined') {
                 this.isInitializing = false;
                 return false;
             }
 
-            if (typeof google === 'undefined') {
-                console.log('❌ Google Identity Services not loaded after waiting');
-                showNotification('Google 身份服務載入失敗，請重新整理頁面', 'error');
-                this.isInitializing = false;
-                return false;
-            }
-
-            console.log('📚 Loading Google API client...');
-            
-            // 加載gapi client
             await new Promise((resolve, reject) => {
                 gapi.load('client', {
-                    callback: () => {
-                        console.log('✅ gapi.client loaded');
-                        resolve();
-                    },
-                    onerror: () => {
-                        console.log('❌ Failed to load gapi.client');
-                        reject(new Error('Failed to load gapi.client'));
-                    }
+                    callback: () => resolve(),
+                    onerror: () => reject(new Error('Failed to load gapi.client'))
                 });
             });
-
-            console.log('🔑 Initializing Google API client...');
-            
-            // 初始化gapi client
             await gapi.client.init({
                 apiKey: GOOGLE_CONFIG.apiKey,
                 discoveryDocs: [GOOGLE_CONFIG.discoveryDoc]
             });
 
-            console.log('🆔 Initializing Google Identity Services...');
-            
-            // 根據裝置類型選擇不同的初始化方式
             const initConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
                 callback: this.handleCredentialResponse.bind(this),
                 auto_select: false,
                 cancel_on_tap_outside: false
             };
-            
-            // 手機版使用redirect模式，桌面版使用popup模式
             if (isMobileDevice()) {
-                console.log('📱 Using mobile-optimized settings...');
-                initConfig.ux_mode = 'redirect';  // 手機版使用redirect
+                initConfig.ux_mode = 'redirect';
                 initConfig.context = 'signin';
                 initConfig.use_fedcm_for_prompt = false;
             } else {
-                console.log('🖥️ Using desktop-optimized settings...');
-                initConfig.ux_mode = 'popup';     // 桌面版使用popup
+                initConfig.ux_mode = 'popup';
                 initConfig.context = 'signin';
             }
-            
             google.accounts.id.initialize(initConfig);
 
-            // OAuth2 token client配置
             const tokenConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
                 scope: GOOGLE_CONFIG.scopes,
                 callback: this.handleTokenResponse.bind(this),
                 error_callback: this.handleTokenError.bind(this)
             };
-            
-            // 手機版和桌面版使用不同的UX模式
-            if (isMobileDevice()) {
-                tokenConfig.ux_mode = 'redirect';
-            } else {
-                tokenConfig.ux_mode = 'popup';
-            }
-            
+            if (isMobileDevice()) tokenConfig.ux_mode = 'redirect';
+            else tokenConfig.ux_mode = 'popup';
             this.tokenClient = google.accounts.oauth2.initTokenClient(tokenConfig);
 
             this.isInitialized = true;
             this.initRetryCount = 0;
             this.isInitializing = false;
             this.updateAuthUI();
-            
-            console.log('✅ Google Identity Services initialized successfully');
             showNotification('Google Drive 服務已就緒', 'success');
             return true;
-            
         } catch (error) {
-            console.error('❌ Google Drive initialization failed:', error);
             this.isInitializing = false;
             this.updateAuthUI();
             showNotification('Google Drive 初始化失敗，部分功能可能受限', 'warning');
@@ -178,100 +113,64 @@ class GoogleDriveManager {
         }
     }
 
-    // 處理ID token（用於身份驗證）
     handleCredentialResponse(response) {
-        console.log('🔐 Received credential response');
         updateSyncStatus('connecting');
-        
         try {
-            // 解析JWT token獲取用戶信息
             const payload = this.parseJwt(response.credential);
-            
             this.currentUser = {
                 id: payload.sub,
                 name: payload.name,
                 email: payload.email,
                 picture: payload.picture
             };
-
-            console.log('👤 User signed in:', this.currentUser.name);
-            
-            // 現在請求訪問令牌
             this.requestAccessToken();
-            
         } catch (error) {
-            console.error('❌ Error handling credential:', error);
             updateSyncStatus('error');
             showNotification('登入失敗，請重試', 'error');
         }
     }
 
-    // 請求訪問令牌（用於API調用）
     requestAccessToken() {
-        console.log('🔑 Requesting access token...');
-        
         if (this.tokenClient) {
-            this.tokenClient.requestAccessToken({prompt: ''});
+            this.tokenClient.requestAccessToken({ prompt: '' });
         } else {
-            console.error('❌ Token client not initialized');
             updateSyncStatus('error');
         }
     }
 
-    // 處理訪問令牌響應
     async handleTokenResponse(response) {
-        console.log('🎫 Received token response');
-        
         if (response.error) {
-            console.error('❌ Token request failed:', response.error);
             this.handleTokenError(response);
             return;
         }
 
         this.accessToken = response.access_token;
         this.isSignedIn = true;
-        
-        // 設置gapi client的訪問令牌
         if (typeof gapi !== 'undefined' && gapi.client) {
             gapi.client.setToken({
                 access_token: this.accessToken
             });
         }
-
-        console.log('✅ Successfully authenticated');
-        
         try {
             if (typeof gapi !== 'undefined' && gapi.client) {
                 await this.ensureAppFolder();
                 await this.performInitialSync();
             }
-            
             this.updateAuthUI();
             updateSyncStatus('synced');
             showNotification('Google Drive 連接成功！', 'success');
-            
-            // Start auto sync
-            if (autoSync && !autoSync.isRunning) {
-                autoSync.start();
-            }
-            
+            if (autoSync && !autoSync.isRunning) autoSync.start();
         } catch (error) {
-            console.error('❌ Post-auth setup failed:', error);
             updateSyncStatus('error');
             showNotification('Google Drive 已登入，但雲端功能可能受限', 'warning');
         }
     }
 
-    // 處理令牌錯誤 - 手機版專用
     handleTokenError(error) {
-        console.error('❌ Token request failed:', error);
         updateSyncStatus('error');
-        
         let message = '';
         let duration = 4000;
-        
         if (isMobileDevice()) {
-            // 手機版錯誤處理
             if (error.type === 'popup_blocked') {
                 message = '📱 請在瀏覽器設定中允許彈出視窗，然後重試';
                 duration = 6000;
@@ -284,7 +183,6 @@ class GoogleDriveManager {
                 message = '手機登入失敗，請重試或使用桌面版';
             }
         } else {
-            // 桌面版錯誤處理
             if (error.type === 'popup_blocked') {
                 message = '請允許彈出視窗以完成登入';
             } else if (error.type === 'access_denied' || error.error === 'access_denied') {
@@ -293,18 +191,15 @@ class GoogleDriveManager {
                 message = '授權失敗: ' + (error.message || error.error || error.type);
             }
         }
-        
         showNotification(message, 'error', duration);
     }
 
-    // 手機版登入流程優化
     async signIn() {
         if (!this.isInitialized) {
             if (this.isInitializing) {
                 showNotification('Google Drive 正在初始化中，請稍等...', 'warning');
                 return false;
             }
-            
             showNotification('正在初始化 Google Drive 服務...', 'warning');
             const initialized = await this.initialize();
             if (!initialized) {
@@ -312,56 +207,35 @@ class GoogleDriveManager {
                 return false;
             }
         }
-
         try {
-            console.log('🚀 Starting sign-in process...');
             updateSyncStatus('connecting');
-            
             if (isMobileDevice()) {
-                console.log('📱 Mobile sign-in flow...');
-                // 手機版：顯示大按鈕讓用戶點擊
                 this.showMobileSignInButton();
             } else {
-                console.log('🖥️ Desktop sign-in flow...');
-                // 桌面版：嘗試自動prompt或顯示按鈕
                 this.renderSignInButton();
-                
                 try {
                     google.accounts.id.prompt((notification) => {
                         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                            console.log('🔘 Prompt not displayed, showing button');
                             this.renderSignInButton();
                         }
                     });
                 } catch (promptError) {
-                    console.log('⚠️ Prompt failed, showing button:', promptError);
                     this.renderSignInButton();
                 }
             }
-            
             return true;
-            
         } catch (error) {
-            console.error('❌ Sign-in failed:', error);
             updateSyncStatus('error');
             showNotification('登入失敗: ' + error.message, 'error');
             return false;
         }
     }
 
-    // 手機版專用登入按鈕
     showMobileSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         const manualBtn = document.getElementById('manualSignInBtn');
-        
         if (!buttonContainer) return;
-        
-        console.log('📱 Showing mobile sign-in button');
-        
-        // 清除現有內容
         buttonContainer.innerHTML = '';
-        
-        // 創建大的手機友好按鈕
         const mobileButton = document.createElement('button');
         mobileButton.className = 'btn btn--primary btn--lg btn--full-width mobile-google-btn';
         mobileButton.innerHTML = `
@@ -369,27 +243,17 @@ class GoogleDriveManager {
             使用Google帳號登入
             <span class="mobile-hint">（手機版）</span>
         `;
-        
         mobileButton.onclick = () => {
-            console.log('📱 Mobile Google sign-in triggered');
             try {
-                // 直接觸發Google登入流程
                 google.accounts.id.prompt();
             } catch (error) {
-                console.error('Mobile sign-in error:', error);
-                // 降級到token client
                 if (this.tokenClient) {
-                    this.tokenClient.requestAccessToken({prompt: 'consent'});
+                    this.tokenClient.requestAccessToken({ prompt: 'consent' });
                 }
             }
         };
-        
         buttonContainer.appendChild(mobileButton);
-        
-        // 隱藏桌面版按鈕
         if (manualBtn) manualBtn.style.display = 'none';
-        
-        // 添加手機版說明
         const helpText = document.createElement('div');
         helpText.className = 'mobile-help-text';
         helpText.innerHTML = `
@@ -401,58 +265,39 @@ class GoogleDriveManager {
             </ul>
         `;
         buttonContainer.appendChild(helpText);
-        
-        // 移除hidden class
         buttonContainer.classList.remove('hidden');
     }
 
-    // 登出
     async signOut() {
         try {
             if (this.isSignedIn) {
-                // 撤銷訪問令牌
                 if (this.accessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
                     google.accounts.oauth2.revoke(this.accessToken);
                 }
-                
-                // 清除狀態
                 this.isSignedIn = false;
                 this.currentUser = null;
                 this.accessToken = null;
                 this.appFolderId = null;
-                
-                // 清除gapi token
                 if (typeof gapi !== 'undefined' && gapi.client) {
                     gapi.client.setToken(null);
                 }
-                
                 this.updateAuthUI();
                 updateSyncStatus('signed_out');
                 showNotification('已登出 Google 帳號', 'success');
-                
-                // Stop auto sync
                 if (autoSync && autoSync.isRunning) {
                     autoSync.stop();
                 }
             }
         } catch (error) {
-            console.error('❌ Sign-out failed:', error);
             showNotification('登出失敗: ' + error.message, 'error');
         }
     }
 
-    // 渲染登入按鈕
     renderSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
-        if (!buttonContainer || typeof google === 'undefined' || !google.accounts) {
-            console.log('Cannot render sign-in button: container or Google services not available');
-            return;
-        }
-
+        if (!buttonContainer || typeof google === 'undefined' || !google.accounts) return;
         try {
-            // 清除現有內容並渲染Google按鈕
             buttonContainer.innerHTML = '';
-            
             google.accounts.id.renderButton(buttonContainer, {
                 theme: 'outline',
                 size: 'large',
@@ -460,14 +305,8 @@ class GoogleDriveManager {
                 shape: 'rectangular',
                 width: 300
             });
-            
-            // 移除hidden class
             buttonContainer.classList.remove('hidden');
-            
-            console.log('✅ Google Sign-In button rendered successfully');
         } catch (error) {
-            console.error('Failed to render Google Sign-In button:', error);
-            // Fallback to manual button
             buttonContainer.innerHTML = `
                 <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
                     <span class="google-icon">G</span>
@@ -478,7 +317,6 @@ class GoogleDriveManager {
         }
     }
 
-    // 更新UI狀態
     updateAuthUI() {
         const signInButton = document.getElementById('googleSignInButton');
         const userInfo = document.getElementById('googleUserInfo');
@@ -491,15 +329,12 @@ class GoogleDriveManager {
         if (this.isSignedIn && this.currentUser) {
             signInButton.classList.add('hidden');
             userInfo.classList.remove('hidden');
-            
             if (userName) userName.textContent = this.currentUser.name;
             if (userEmail) userEmail.textContent = this.currentUser.email;
             if (userAvatar) userAvatar.src = this.currentUser.picture || '';
         } else {
             signInButton.classList.remove('hidden');
             userInfo.classList.add('hidden');
-            
-            // 根據設備類型和初始化狀態渲染登入按鈕
             if (this.isInitialized && typeof google !== 'undefined' && google.accounts) {
                 setTimeout(() => {
                     if (isMobileDevice()) {
@@ -509,7 +344,6 @@ class GoogleDriveManager {
                     }
                 }, 100);
             } else {
-                // 顯示基本登入按鈕
                 signInButton.innerHTML = `
                     <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
                         <span class="google-icon">G</span>
@@ -519,11 +353,9 @@ class GoogleDriveManager {
                 signInButton.classList.remove('hidden');
             }
         }
-        
         updateSyncStatus();
     }
 
-    // 解析JWT token
     parseJwt(token) {
         try {
             const base64Url = token.split('.')[1];
@@ -536,26 +368,19 @@ class GoogleDriveManager {
             );
             return JSON.parse(jsonPayload);
         } catch (error) {
-            console.error('Failed to parse JWT token:', error);
             throw error;
         }
     }
 
     async ensureAppFolder() {
-        if (typeof gapi === 'undefined' || !gapi.client || !gapi.client.drive) {
-            console.log('Google Drive API not available');
-            return;
-        }
-        
+        if (typeof gapi === 'undefined' || !gapi.client || !gapi.client.drive) return;
         try {
             const response = await gapi.client.drive.files.list({
                 q: `name='${GOOGLE_CONFIG.appName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
                 spaces: 'drive'
             });
-
             if (response.result.files.length > 0) {
                 this.appFolderId = response.result.files[0].id;
-                console.log('Found existing app folder:', this.appFolderId);
             } else {
                 const folderResponse = await gapi.client.drive.files.create({
                     resource: {
@@ -563,12 +388,9 @@ class GoogleDriveManager {
                         mimeType: 'application/vnd.google-apps.folder'
                     }
                 });
-                
                 this.appFolderId = folderResponse.result.id;
-                console.log('Created new app folder:', this.appFolderId);
             }
         } catch (error) {
-            console.error('Failed to ensure app folder:', error);
             throw error;
         }
     }
@@ -578,7 +400,6 @@ class GoogleDriveManager {
             showSyncProgress('正在檢查雲端數據...', 25);
             await this.downloadAndMergeGameData();
         } catch (error) {
-            console.error('Initial sync failed:', error);
             showSyncProgress('', 0);
         }
     }
@@ -611,16 +432,13 @@ class GoogleDriveManager {
             const delimiter = "\r\n--" + boundary + "\r\n";
             const close_delim = "\r\n--" + boundary + "--";
 
-            // Only include parents on POST (create)
             let metadata = { name: fileName };
             let method = 'POST';
             let url = 'https://www.googleapis.com/upload/drive/v3/files';
             if (existingFiles.result.files.length > 0) {
-                // PATCH: do NOT include parents
                 url += '/' + existingFiles.result.files[0].id;
                 method = 'PATCH';
             } else {
-                // POST: include parents for creation
                 metadata.parents = [this.appFolderId];
             }
 
@@ -636,7 +454,7 @@ class GoogleDriveManager {
             const response = await gapi.client.request({
                 path: url,
                 method: method,
-                params: {'uploadType': 'multipart'},
+                params: { 'uploadType': 'multipart' },
                 headers: {
                     'Content-Type': 'multipart/related; boundary="' + boundary + '"'
                 },
@@ -644,10 +462,8 @@ class GoogleDriveManager {
             });
 
             cloudConfig.lastSyncTime = new Date().toISOString();
-            console.log('Game data uploaded successfully:', response.result);
             return response.result;
         } catch (error) {
-            console.error('Failed to upload game data:', error);
             throw error;
         }
     }
@@ -665,7 +481,6 @@ class GoogleDriveManager {
             });
 
             if (response.result.files.length === 0) {
-                console.log('No game data found in Google Drive');
                 return null;
             }
 
@@ -676,10 +491,8 @@ class GoogleDriveManager {
             });
 
             const gameData = JSON.parse(fileContent.body);
-            console.log('Game data downloaded successfully');
             return gameData;
         } catch (error) {
-            console.error('Failed to download game data:', error);
             throw error;
         }
     }
@@ -687,31 +500,22 @@ class GoogleDriveManager {
     async downloadAndMergeGameData() {
         try {
             showSyncProgress('正在下載雲端數據...', 25);
-            
             const cloudData = await this.downloadGameData();
             if (!cloudData || !cloudData.gameManager) {
                 showSyncProgress('', 0);
                 return;
             }
-
             showSyncProgress('正在合併數據...', 75);
-
-            // Check for conflicts
             const hasConflicts = this.detectConflicts(gameManager, cloudData.gameManager);
-            
             if (hasConflicts) {
                 showSyncProgress('', 0);
                 this.showConflictResolution(gameManager, cloudData.gameManager);
                 return;
             }
-
-            // Merge data
             const mergedData = this.mergeGameData(gameManager, cloudData.gameManager);
             gameManager = mergedData;
-
             showSyncProgress('同步完成', 100);
             setTimeout(() => showSyncProgress('', 0), 1000);
-
             updateGamesList();
             updateGamesSelectionList();
             showNotification('雲端數據同步成功', 'success');
@@ -723,16 +527,12 @@ class GoogleDriveManager {
 
     detectConflicts(localData, cloudData) {
         if (!localData.games || !cloudData.games) return false;
-
         for (const gameId in localData.games) {
             if (cloudData.games[gameId]) {
                 const localGame = localData.games[gameId];
                 const cloudGame = cloudData.games[gameId];
-                
                 const localTime = new Date(localGame.lastModified);
                 const cloudTime = new Date(cloudGame.lastModified);
-                
-                // Consider conflict if both have been modified and difference is less than 1 minute
                 if (Math.abs(localTime - cloudTime) > 60000 && localTime > cloudTime) {
                     return true;
                 }
@@ -743,24 +543,18 @@ class GoogleDriveManager {
 
     mergeGameData(localData, cloudData) {
         const merged = { ...localData };
-        
         if (!cloudData.games) return merged;
-
         for (const gameId in cloudData.games) {
             if (!merged.games[gameId]) {
-                // Game only exists in cloud
                 merged.games[gameId] = cloudData.games[gameId];
             } else {
-                // Game exists in both, use the one with later modification time
                 const localTime = new Date(merged.games[gameId].lastModified);
                 const cloudTime = new Date(cloudData.games[gameId].lastModified);
-                
                 if (cloudTime > localTime) {
                     merged.games[gameId] = cloudData.games[gameId];
                 }
             }
         }
-
         return merged;
     }
 
@@ -768,19 +562,15 @@ class GoogleDriveManager {
         const modal = document.getElementById('conflictModal');
         const localInfo = document.getElementById('localVersionInfo');
         const cloudInfo = document.getElementById('cloudVersionInfo');
-
         if (localInfo) {
             const localTime = this.getLatestModificationTime(localData);
             localInfo.textContent = `最後修改：${formatDateTime(localTime)}`;
         }
-
         if (cloudInfo) {
             const cloudTime = this.getLatestModificationTime(cloudData);
             cloudInfo.textContent = `最後修改：${formatDateTime(cloudTime)}`;
         }
-
         window.conflictData = { local: localData, cloud: cloudData };
-        
         if (modal) {
             modal.classList.remove('hidden');
         }
@@ -788,7 +578,6 @@ class GoogleDriveManager {
 
     getLatestModificationTime(data) {
         if (!data.games) return new Date().toISOString();
-        
         let latest = new Date(0);
         for (const gameId in data.games) {
             const gameTime = new Date(data.games[gameId].lastModified);
@@ -804,7 +593,6 @@ class GoogleDriveManager {
             showNotification('請先登入 Google Drive', 'warning');
             return false;
         }
-
         try {
             showSyncProgress('正在上傳數據...', 50);
             await this.uploadGameData(gameManager);
@@ -820,14 +608,11 @@ class GoogleDriveManager {
     }
 
     handleSyncError(error) {
-        console.error('Sync error:', error);
-
         let errorMessage = '同步失敗，請檢查網路連線';
         if (error.status === 401) {
             errorMessage = '認證已過期，請重新登入';
             this.signOut();
         } else if (error.status === 403) {
-            // Try to get detailed error message from Google
             if (error.result && error.result.error && error.result.error.message) {
                 errorMessage = 'Google Drive 錯誤: ' + error.result.error.message;
             } else {
@@ -866,9 +651,7 @@ class GoogleDriveManager {
             } else {
                 localStorage.setItem('deviceId', deviceId);
             }
-        } catch (e) {
-            // localStorage not available
-        }
+        } catch (e) {}
         return deviceId;
     }
 }
@@ -880,31 +663,24 @@ class AutoSync {
         this.timer = null;
         this.isRunning = false;
     }
-
     start() {
         if (this.isRunning || !googleDriveManager.isSignedIn) return;
-        
         this.isRunning = true;
         this.timer = setInterval(async () => {
             if (googleDriveManager.isSignedIn && gameManager.hasUnsavedChanges) {
-                console.log('Auto-syncing to Google Drive...');
                 const success = await googleDriveManager.syncWithCloud();
                 if (success) {
                     gameManager.hasUnsavedChanges = false;
                 }
             }
         }, this.interval);
-        
-        console.log('Auto-sync started');
     }
-
     stop() {
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
         }
         this.isRunning = false;
-        console.log('Auto-sync stopped');
     }
 }
 
@@ -912,65 +688,8 @@ class AutoSync {
 const googleDriveManager = new GoogleDriveManager();
 const autoSync = new AutoSync();
 
-// Game State Management
 let gameManager = {
-    games: {
-        'game_20250821_001': {
-            id: 'game_20250821_001',
-            name: '週五麻將局',
-            creator: 'John',
-            createdAt: '2025-08-21T08:58:00.000Z',
-            lastModified: '2025-08-21T08:58:00.000Z',
-            lastEditor: 'John',
-            playerCount: 4,
-            roundCount: 8,
-            cloudFileId: null,
-            lastCloudSync: null,
-            syncStatus: 'pending',
-            gameData: {
-                players: [
-                    {id: 1, name: 'John', totalWinLoss: 150, bankerRounds: 2},
-                    {id: 2, name: 'Mary', totalWinLoss: -50, bankerRounds: 2},
-                    {id: 3, name: 'Peter', totalWinLoss: -80, bankerRounds: 2},
-                    {id: 4, name: 'Lisa', totalWinLoss: -20, bankerRounds: 2}
-                ],
-                currentRound: 9,
-                currentBankerId: null,
-                defaultBankerRounds: 3,
-                customBankerRounds: 3,
-                rounds: [],
-                gameStarted: true,
-                nextPlayerId: 5,
-                gameCreatedAt: '2025-08-21T08:58:00.000Z',
-                lastModified: '2025-08-21T08:58:00.000Z'
-            }
-        },
-        'game_20250821_002': {
-            id: 'game_20250821_002',
-            name: '週末德州撲克',
-            creator: 'Alice',
-            createdAt: '2025-08-21T10:30:00.000Z',
-            lastModified: '2025-08-21T10:30:00.000Z',
-            lastEditor: 'Alice',
-            playerCount: 6,
-            roundCount: 12,
-            cloudFileId: null,
-            lastCloudSync: null,
-            syncStatus: 'pending',
-            gameData: {
-                players: [],
-                currentRound: 1,
-                currentBankerId: null,
-                defaultBankerRounds: 3,
-                customBankerRounds: 3,
-                rounds: [],
-                gameStarted: false,
-                nextPlayerId: 1,
-                gameCreatedAt: '2025-08-21T10:30:00.000Z',
-                lastModified: '2025-08-21T10:30:00.000Z'
-            }
-        }
-    },
+    games: {},
     currentGameId: null,
     currentUser: 'John',
     hasUnsavedChanges: false
@@ -984,20 +703,14 @@ let cloudConfig = {
     isConfigured: true
 };
 
-// Current game state (for backward compatibility)
 let gameState = null;
 let currentScreen = 'welcome';
-let currentRecordingPlayerId = null;
-let editingRecord = { roundNumber: null, playerId: null };
 
-// Google Drive API Functions - Updated for GIS
 window.signInGoogle = function() {
-    console.log('📱 Sign in button clicked');
     googleDriveManager.signIn();
 };
 
 window.signOutGoogle = function() {
-    console.log('Sign out button clicked');
     googleDriveManager.signOut();
 };
 
@@ -1006,7 +719,6 @@ async function manualSyncWithCloud() {
         showNotification('請先登入 Google Drive', 'warning');
         return;
     }
-    
     updateCloudSyncStatus('syncing');
     const success = await googleDriveManager.syncWithCloud();
     updateCloudSyncStatus(success ? 'success' : 'error');
@@ -1015,11 +727,8 @@ async function manualSyncWithCloud() {
 function updateCloudSyncStatus(status = 'success') {
     const element = document.getElementById('cloudSyncStatus');
     const textElement = document.getElementById('cloudSyncText');
-    
     if (!element || !textElement) return;
-    
     element.className = 'cloud-sync-status';
-    
     if (status === 'syncing') {
         element.classList.add('syncing');
         textElement.textContent = '正在同步雲端...';
@@ -1039,9 +748,7 @@ function showSyncProgress(text, percentage) {
     const progressDiv = document.getElementById('syncProgress');
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
-    
     if (!progressDiv) return;
-    
     if (text && percentage > 0) {
         progressDiv.style.display = 'block';
         if (progressFill) progressFill.style.width = percentage + '%';
@@ -1051,174 +758,10 @@ function showSyncProgress(text, percentage) {
     }
 }
 
-// Conflict Resolution Functions
-function resolveConflict(choice) {
-    if (!window.conflictData) return;
-    
-    if (choice === 'local') {
-        // Keep local data, upload to cloud
-        googleDriveManager.syncWithCloud();
-        showNotification('已保留本地版本並上傳至雲端', 'success');
-    } else if (choice === 'cloud') {
-        // Use cloud data
-        gameManager = window.conflictData.cloud;
-        updateGamesList();
-        updateGamesSelectionList();
-        showNotification('已使用雲端版本', 'success');
-    }
-    
-    delete window.conflictData;
-    closeConflictModal();
-}
-
-function closeConflictModal() {
-    const modal = document.getElementById('conflictModal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
-
-// Settings Functions
-function toggleGoogleDriveSync() {
-    if (googleDriveManager.isSignedIn) {
-        googleDriveManager.signOut();
-    } else {
-        googleDriveManager.signIn();
-    }
-}
-
-function updateGoogleDriveSettings() {
-    const toggleButton = document.getElementById('googleDriveToggle');
-    const lastSyncElement = document.getElementById('lastSyncTime');
-    
-    if (toggleButton) {
-        toggleButton.textContent = googleDriveManager.isSignedIn ? '停用' : '啟用';
-        toggleButton.className = googleDriveManager.isSignedIn ? 'btn btn--sm btn--secondary' : 'btn btn--sm btn--primary';
-    }
-    
-    if (lastSyncElement) {
-        if (googleDriveManager.isSignedIn && cloudConfig.lastSyncTime) {
-            const lastSync = new Date(cloudConfig.lastSyncTime);
-            const minutesAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
-            lastSyncElement.textContent = minutesAgo < 1 ? '剛剛同步' : `${minutesAgo}分鐘前`;
-        } else {
-            lastSyncElement.textContent = '未同步';
-        }
-    }
-}
-
-// Utility Functions
-function generateGameId() {
-    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `game_${timestamp}_${random}`;
-}
-
-function formatDateTime(isoString) {
-    return new Date(isoString).toLocaleString('zh-TW', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-function formatDate(isoString) {
-    return new Date(isoString).toLocaleDateString('zh-TW');
-}
-
-// Screen Navigation Functions - Fixed
-function showScreen(screenId) {
-    console.log('Showing screen:', screenId);
-    const screens = document.querySelectorAll('.screen');
-    screens.forEach(screen => {
-        screen.classList.add('hidden');
-    });
-    
-    const targetScreen = document.getElementById(screenId);
-    if (targetScreen) {
-        targetScreen.classList.remove('hidden');
-        currentScreen = screenId;
-        console.log('Successfully switched to screen:', screenId);
-    } else {
-        console.error('Screen not found:', screenId);
-    }
-    
-    updateBottomNavigation();
-}
-
-function updateBottomNavigation() {
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => item.classList.remove('active'));
-    
-    if (currentScreen === 'recordScreen') {
-        navItems[0]?.classList.add('active');
-    } else if (currentScreen === 'detailedRecordsScreen') {
-        navItems[1]?.classList.add('active');
-    } else if (currentScreen === 'statisticsScreen') {
-        navItems[2]?.classList.add('active');
-    } else if (currentScreen === 'settingsScreen') {
-        navItems[3]?.classList.add('active');
-    }
-}
-
-// Navigation Functions - Fixed
-window.showWelcome = function() {
-    console.log('Showing welcome screen');
-    showScreen('welcomeScreen');
-    updateSyncStatus();
-};
-
-window.showGameManagement = function() {
-    console.log('Showing game management screen');
-    showScreen('gameManagementScreen');
-    updateGamesList();
-    updateCloudSyncStatus();
-};
-
-window.showGameList = function() {
-    console.log('Showing game list screen');
-    showScreen('gameListScreen');
-    updateGamesSelectionList();
-};
-
-window.backToGameManagement = function() {
-    if (gameManager.currentGameId) {
-        showGameManagement();
-    } else {
-        showWelcome();
-    }
-};
-
-// Game Management Functions
-
-function selectGame(gameId) {
-    const game = gameManager.games[gameId];
-    if (!game) return;
-    
-    gameManager.currentGameId = gameId;
-    gameState = game.gameData;
-    
-    if (gameState.gameStarted && gameState.rounds.length > 0) {
-        showRecord();
-    } else if (gameState.gameStarted) {
-        showBankerSelection();
-    } else {
-        showPlayerSetup();
-    }
-}
-
-function selectAndStartGame(gameId) {
-    selectGame(gameId);
-}
-
 function updateGamesList() {
     const container = document.getElementById('gamesList');
     if (!container) return;
-    
     container.innerHTML = '';
-    
     const games = Object.values(gameManager.games);
     if (games.length === 0) {
         container.innerHTML = `
@@ -1229,19 +772,13 @@ function updateGamesList() {
         `;
         return;
     }
-    
     games.forEach(game => {
         const gameDiv = document.createElement('div');
         const syncing = game.syncStatus === 'syncing';
-        
         gameDiv.className = `game-card ${syncing ? 'syncing' : ''}`;
         gameDiv.onclick = () => selectGame(game.id);
-        
         let statusText = '可編輯';
-        if (syncing) {
-            statusText = '正在同步中';
-        }
-        
+        if (syncing) statusText = '正在同步中';
         gameDiv.innerHTML = `
             ${syncing ? '<div class="sync-indicator-card">☁️</div>' : ''}
             <div class="game-header">
@@ -1254,7 +791,7 @@ function updateGamesList() {
                 </div>
                 <div class="game-meta-item">
                     <span class="meta-label">玩家數</span>
-                    <span>${game.playerCount} 人</span>
+                    <span>${game.playerCount || 0} 人</span>
                 </div>
                 <div class="game-meta-item">
                     <span class="meta-label">創建時間</span>
@@ -1276,9 +813,7 @@ function updateGamesList() {
 function updateGamesSelectionList() {
     const container = document.getElementById('gamesSelectionList');
     if (!container) return;
-    
     container.innerHTML = '';
-    
     const games = Object.values(gameManager.games);
     if (games.length === 0) {
         container.innerHTML = `
@@ -1289,14 +824,12 @@ function updateGamesSelectionList() {
         `;
         return;
     }
-    
     games.forEach(game => {
         const gameDiv = document.createElement('div');
         gameDiv.className = `game-card`;
         gameDiv.onclick = () => {
             selectAndStartGame(game.id);
         };
-        
         gameDiv.innerHTML = `
             <div class="game-header">
                 <h3 class="game-title">${game.name}</h3>
@@ -1308,7 +841,7 @@ function updateGamesSelectionList() {
                 </div>
                 <div class="game-meta-item">
                     <span class="meta-label">輪數</span>
-                    <span>${game.roundCount} 輪</span>
+                    <span>${game.roundCount || 0} 輪</span>
                 </div>
                 <div class="game-meta-item">
                     <span class="meta-label">創建時間</span>
@@ -1327,88 +860,18 @@ function updateGamesSelectionList() {
     });
 }
 
-
-function updateGamesSelectionList() {
-    const container = document.getElementById('gamesSelectionList');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    const games = Object.values(gameManager.games);
-    if (games.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <h3>尚無遊戲</h3>
-                <p>返回首頁創建您的第一個遊戲</p>
-            </div>
-        `;
-        return;
-    }
-    
-    games.forEach(game => {
-        const gameDiv = document.createElement('div');
-        const locked = isGameLocked(game);
-        gameDiv.className = `game-card ${locked ? 'locked' : ''}`;
-        gameDiv.onclick = () => {
-            if (locked) {
-                showNotification(`遊戲正被 ${game.lockHolder} 編輯中，請稍後再試`, 'warning');
-                return;
-            }
-            selectAndStartGame(game.id);
-        };
-        
-        gameDiv.innerHTML = `
-            ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
-            <div class="game-header">
-                <h3 class="game-title">${game.name}</h3>
-            </div>
-            <div class="game-meta">
-                <div class="game-meta-item">
-                    <span class="meta-label">創建者</span>
-                    <span>${game.creator}</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">輪數</span>
-                    <span>${game.roundCount} 輪</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">創建時間</span>
-                    <span>${formatDate(game.createdAt)}</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">最後修改</span>
-                    <span>${formatDate(game.lastModified)}</span>
-                </div>
-            </div>
-            <div class="game-status ${locked ? 'locked' : 'available'}">
-                ${locked ? `正被 ${game.lockHolder} 編輯中` : '點擊繼續遊戲'}
-            </div>
-        `;
-        container.appendChild(gameDiv);
-    });
-}
-
 function selectGame(gameId) {
     const game = gameManager.games[gameId];
     if (!game) return;
-    
-    if (isGameLocked(game)) {
-        showNotification(`遊戲正被 ${game.lockHolder} 編輯中，請稍後再試`, 'warning');
-        return;
-    }
-    
     gameManager.currentGameId = gameId;
     gameState = game.gameData;
-    
-    if (gameState.gameStarted && gameState.rounds.length > 0) {
+    if (gameState.gameStarted && gameState.rounds && gameState.rounds.length > 0) {
         showRecord();
     } else if (gameState.gameStarted) {
         showBankerSelection();
     } else {
         showPlayerSetup();
     }
-    
-    acquireGameLock(gameId);
 }
 
 function selectAndStartGame(gameId) {
