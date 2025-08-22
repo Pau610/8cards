@@ -2,11 +2,11 @@
 
 // Google Drive API Configuration
 const GOOGLE_CONFIG = {
-    apiKey: 'YOUR_GOOGLE_DRIVE_API_KEY', // 用戶需要替換
-    clientId: 'YOUR_GOOGLE_CLIENT_ID', // 用戶需要替換
+    apiKey: 'AIzaSyAc6cpX92QtlxoBz5uDJVaLGW18oD0R0Hs', // 用戶需要替換
+    clientId: '969122977239-1n1vhboklrshhlfv70ak1jhtd47hb0ef.apps.googleusercontent.com', // 用戶需要替換
     discoveryDoc: 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
     scopes: 'https://www.googleapis.com/auth/drive.file',
-    appName: 'Gambling Scorekeeper'
+    appName: '8 Cards'
 };
 
 // Google Drive Manager Class
