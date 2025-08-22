@@ -976,6 +976,24 @@ let gameManager = {
     hasUnsavedChanges: false
 };
 
+// Initialize a game state with both players (currently in game) and allPlayers (all ever joined)
+function createInitialGameData() {
+    return {
+        players: [],
+        allPlayers: [], // master list of all players who have ever joined
+        currentRound: 1,
+        currentBankerId: null,
+        defaultBankerRounds: 3,
+        customBankerRounds: 3,
+        rounds: [],
+        gameStarted: false,
+        nextPlayerId: 1,
+        gameCreatedAt: new Date().toISOString(),
+        lastModified: new Date().toISOString()
+    };
+}
+
+
 let cloudConfig = {
     provider: 'googledrive',
     autoSyncInterval: 300000,
@@ -1614,6 +1632,9 @@ function updateCurrentGameTitle() {
     }
 }
 
+// --- PLAYER MANAGEMENT --- //
+
+// Add Player (with support for rejoin and persistent record)
 window.addPlayer = function() {
     console.log('Adding player...');
     const input = document.getElementById('playerNameInput');
@@ -1621,41 +1642,44 @@ window.addPlayer = function() {
         console.error('Player name input not found or no game state');
         return;
     }
-    
     const name = input.value.trim();
-    
     if (name === '') {
         showNotification('請輸入玩家名稱', 'error');
         return;
     }
-    
-    if (gameState.players.some(player => player.name === name)) {
-        showNotification('玩家名稱已存在', 'error');
-        return;
+
+    // Check if player with this name exists in allPlayers (master list)
+    let player = (gameState.allPlayers || []).find(p => p.name === name);
+    if (player) {
+        // Already played before
+        if (gameState.players.some(p => p.id === player.id)) {
+            showNotification('玩家名稱已存在', 'error');
+            return;
+        }
+        // Rejoin, add to current players
+        gameState.players.push(player);
+    } else {
+        // New player
+        player = {
+            id: gameState.nextPlayerId++,
+            name: name,
+            totalWinLoss: 0,
+            bankerRounds: 0
+        };
+        gameState.players.push(player);
+        // Add to allPlayers master list
+        if (!gameState.allPlayers) gameState.allPlayers = [];
+        gameState.allPlayers.push(player);
     }
-    
-    if (gameState.players.length >= 20) {
-        showNotification('最多只能添加20位玩家', 'error');
-        return;
-    }
-    
-    const player = {
-        id: gameState.nextPlayerId++,
-        name: name,
-        totalWinLoss: 0,
-        bankerRounds: 0
-    };
-    
-    gameState.players.push(player);
     input.value = '';
     updatePlayerList();
     updateConfirmButton();
     autoSave();
 };
 
+// Remove Player (from current game only, keep record in allPlayers)
 window.removePlayer = function(playerId) {
     if (!gameState) return;
-    
     console.log('Removing player:', playerId);
     gameState.players = gameState.players.filter(player => player.id !== playerId);
     updatePlayerList();
@@ -1663,12 +1687,11 @@ window.removePlayer = function(playerId) {
     autoSave();
 };
 
+// List all current players
 function updatePlayerList() {
     const container = document.getElementById('playerList');
     if (!container || !gameState) return;
-    
     container.innerHTML = '';
-    
     gameState.players.forEach(player => {
         const playerDiv = document.createElement('div');
         playerDiv.className = 'player-item';
@@ -1680,10 +1703,10 @@ function updatePlayerList() {
     });
 }
 
+// Confirm players (must have at least 2)
 function updateConfirmButton() {
     const btn = document.getElementById('confirmPlayersBtn');
     if (!btn || !gameState) return;
-    
     const canConfirm = gameState.players.length >= 2;
     btn.disabled = !canConfirm;
     btn.textContent = canConfirm ? `確認玩家 (${gameState.players.length}人)` : '確認玩家 (最少2人)';
