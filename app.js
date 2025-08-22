@@ -583,18 +583,13 @@ class GoogleDriveManager {
         }
     }
 
-    async uploadGameData(gameData) {
+        async uploadGameData(gameData) {
         if (!this.isSignedIn || !this.appFolderId || typeof gapi === 'undefined' || !gapi.client) {
             throw new Error('Not authenticated or Google Drive API not available');
         }
 
         try {
             const fileName = 'games-data.json';
-            const metadata = {
-                name: fileName,
-                parents: [this.appFolderId]
-            };
-
             const dataToUpload = {
                 metadata: {
                     version: '2.0',
@@ -616,6 +611,19 @@ class GoogleDriveManager {
             const delimiter = "\r\n--" + boundary + "\r\n";
             const close_delim = "\r\n--" + boundary + "--";
 
+            // Only include parents on POST (create)
+            let metadata = { name: fileName };
+            let method = 'POST';
+            let url = 'https://www.googleapis.com/upload/drive/v3/files';
+            if (existingFiles.result.files.length > 0) {
+                // PATCH: do NOT include parents
+                url += '/' + existingFiles.result.files[0].id;
+                method = 'PATCH';
+            } else {
+                // POST: include parents for creation
+                metadata.parents = [this.appFolderId];
+            }
+
             const multipartRequestBody =
                 delimiter +
                 'Content-Type: application/json\r\n\r\n' +
@@ -625,14 +633,9 @@ class GoogleDriveManager {
                 JSON.stringify(dataToUpload, null, 2) +
                 close_delim;
 
-            let url = 'https://www.googleapis.com/upload/drive/v3/files';
-            if (existingFiles.result.files.length > 0) {
-                url += '/' + existingFiles.result.files[0].id;
-            }
-
             const response = await gapi.client.request({
                 path: url,
-                method: existingFiles.result.files.length > 0 ? 'PATCH' : 'POST',
+                method: method,
                 params: {'uploadType': 'multipart'},
                 headers: {
                     'Content-Type': 'multipart/related; boundary="' + boundary + '"'
