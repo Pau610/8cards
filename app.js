@@ -72,49 +72,6 @@ function isIOSSafari() {
 // On next page load, if a valid credential is found, the app will restore sign-in state automatically.
 // For security, the access token is NOT persisted; only the ID token and user info are cached for silent restoration.
 
-const GOOGLE_LOGIN_STORAGE_KEY = 'googleUserCredential';
-
-function persistGoogleCredential(credential, userObj) {
-    try {
-        const data = {
-            credential,
-            user: userObj,
-            ts: Date.now()
-        };
-        localStorage.setItem(GOOGLE_LOGIN_STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {
-        // Storage not available or quota exceeded
-    }
-}
-
-function clearPersistedGoogleCredential() {
-    try {
-        localStorage.removeItem(GOOGLE_LOGIN_STORAGE_KEY);
-    } catch (e) {}
-}
-
-function getPersistedGoogleCredential() {
-    try {
-        const raw = localStorage.getItem(GOOGLE_LOGIN_STORAGE_KEY);
-        if (!raw) return null;
-        const data = JSON.parse(raw);
-        // Optionally check that it's not expired (1 hour for ID token by spec)
-        if (data && data.credential && data.user) {
-            // JWT: get exp field
-            const jwtParts = data.credential.split('.');
-            if (jwtParts.length === 3) {
-                const payload = JSON.parse(atob(jwtParts[1].replace(/-/g, '+').replace(/_/g, '/')));
-                if (payload.exp && Date.now() / 1000 < payload.exp) {
-                    return data;
-                }
-            }
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
 // Google Drive Manager Class with Mobile-Optimized Google Identity Services
 class GoogleDriveManager {
     constructor() {
