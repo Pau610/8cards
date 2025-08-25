@@ -2435,16 +2435,39 @@ function initializeEventListeners() {
     console.log('Event listeners initialized');
 }
 
-// Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', async function() {
+// Utility: check if id_token is expired
+function isTokenExpired(idToken) {
+    try {
+        const payload = JSON.parse(atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return !payload.exp || (Date.now() / 1000 >= payload.exp);
+    } catch (e) { return true; }
+}
+
+// On DOMContentLoaded:
+document.addEventListener('DOMContentLoaded', async function() {DOMContentLoaded
     initializeEventListeners();
     detectOnlineStatus();
     showWelcome();
-    // --- PATCH: Do not auto-popup on refresh ---
     setTimeout(async () => {
         try {
             await googleDriveManager.initialize();
-            // UI will restore session if token found in storage
+            // PATCH: Immediately restore session if available
+            const persisted = getPersistedGoogleCredential();
+            if (persisted && !isTokenExpired(persisted.credential)) {
+                googleDriveManager.isSignedIn = true;
+                googleDriveManager.currentUser = persisted.user;
+                googleDriveManager.idToken = persisted.credential;
+                googleDriveManager.updateAuthUI();
+                // Silently request a new access token
+                if (googleDriveManager.tokenClient) {
+                    googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                }
+            } else {
+                // Not signed in, show login UI only, do NOT popup
+                googleDriveManager.isSignedIn = false;
+                googleDriveManager.currentUser = null;
+                googleDriveManager.updateAuthUI();
+            }
         } catch (error) {}
     }, 2000);
     setInterval(() => {
