@@ -33,56 +33,6 @@ function getPersistedGoogleCredential() {
     } catch (e) { return null; }
 }
 
-// --- In GoogleDriveManager constructor ---
-constructor() {
-    // ...
-    const persisted = getPersistedGoogleCredential();
-    if (persisted) {
-        this.isSignedIn = true;
-        this.currentUser = persisted.user;
-        this.idToken = persisted.credential;
-    }
-}
-
-// --- In initialize() after GIS setup ---
-const persisted = getPersistedGoogleCredential();
-if (persisted && !this.accessToken) {
-    this.isSignedIn = true;
-    this.currentUser = persisted.user;
-    this.idToken = persisted.credential;
-    this.updateAuthUI();
-    if (this.tokenClient) {
-        this.tokenClient.requestAccessToken({prompt: ''});
-    }
-    showNotification('Google Drive 已自動登入', 'success');
-    return true;
-}
-
-// --- In handleCredentialResponse() ---
-persistGoogleCredential(response.credential, this.currentUser);
-
-// --- In handleTokenResponse() ---
-if (this.currentUser && this.idToken) {
-    persistGoogleCredential(this.idToken, this.currentUser);
-}
-
-// --- In signOut() ---
-clearPersistedGoogleCredential();
-
-// --- In signIn(), before showing prompt ---
-const persisted = getPersistedGoogleCredential();
-if (persisted && !this.accessToken) {
-    this.isSignedIn = true;
-    this.currentUser = persisted.user;
-    this.idToken = persisted.credential;
-    this.updateAuthUI();
-    if (this.tokenClient) {
-        this.tokenClient.requestAccessToken({prompt: ''});
-    }
-    showNotification('已自動登入 Google 帳號', 'success');
-    return true;
-}
-
 // Enhanced Game State Management with Mobile-Optimized Google Identity Services
 
 // Google Drive API Configuration - Updated with fixed credentials
