@@ -31,6 +31,55 @@ function isIOSSafari() {
     return /iPad|iPhone|iPod/.test(userAgent) && /Safari/.test(userAgent) && !/CriOS|FxiOS|OPiOS|mercury/.test(userAgent);
 }
 
+// --- Google Login Persistence Patch ---
+// The following logic will persist the user's Google login status across page refreshes
+// by storing the most recent credential (ID token) and user info in localStorage.
+// On next page load, if a valid credential is found, the app will restore sign-in state automatically.
+// For security, the access token is NOT persisted; only the ID token and user info are cached for silent restoration.
+
+const GOOGLE_LOGIN_STORAGE_KEY = 'googleUserCredential';
+
+function persistGoogleCredential(credential, userObj) {
+    try {
+        const data = {
+            credential,
+            user: userObj,
+            ts: Date.now()
+        };
+        localStorage.setItem(GOOGLE_LOGIN_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+        // Storage not available or quota exceeded
+    }
+}
+
+function clearPersistedGoogleCredential() {
+    try {
+        localStorage.removeItem(GOOGLE_LOGIN_STORAGE_KEY);
+    } catch (e) {}
+}
+
+function getPersistedGoogleCredential() {
+    try {
+        const raw = localStorage.getItem(GOOGLE_LOGIN_STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        // Optionally check that it's not expired (1 hour for ID token by spec)
+        if (data && data.credential && data.user) {
+            // JWT: get exp field
+            const jwtParts = data.credential.split('.');
+            if (jwtParts.length === 3) {
+                const payload = JSON.parse(atob(jwtParts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                if (payload.exp && Date.now() / 1000 < payload.exp) {
+                    return data;
+                }
+            }
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 // Google Drive Manager Class with Mobile-Optimized Google Identity Services
 class GoogleDriveManager {
     constructor() {
@@ -44,6 +93,15 @@ class GoogleDriveManager {
         this.maxRetries = 3;
         this.initRetryCount = 0;
         this.isInitializing = false;
+
+        // --- Google Login Persistence Patch: Preload user state if possible ---
+        // This enables much better UX: user stays logged in after refresh.
+        const persisted = getPersistedGoogleCredential();
+        if (persisted) {
+            this.isSignedIn = true;
+            this.currentUser = persisted.user;
+            this.idToken = persisted.credential; // Store original credential (id_token)
+        }
     }
 
     async initialize() {
@@ -163,8 +221,27 @@ class GoogleDriveManager {
             this.isInitialized = true;
             this.initRetryCount = 0;
             this.isInitializing = false;
+
+            // --- Google Login Persistence Patch: Try restoring sign-in state ---
+            // If a previous Google sign-in exists and token is still valid, restore session without requiring user prompt.
+            const persisted = getPersistedGoogleCredential();
+            if (persisted && !this.accessToken) {
+                // Try to restore user session
+                this.isSignedIn = true;
+                this.currentUser = persisted.user;
+                // Set ID token for reference
+                this.idToken = persisted.credential;
+                this.updateAuthUI();
+                // Optionally, re-request an access token silently
+                if (this.tokenClient) {
+                    // Use prompt: '' for silent to avoid user consent dialog if possible
+                    this.tokenClient.requestAccessToken({prompt: ''});
+                }
+                showNotification('Google Drive 已自動登入', 'success');
+                return true;
+            }
+
             this.updateAuthUI();
-            
             console.log('✅ Google Identity Services initialized successfully');
             showNotification('Google Drive 服務已就緒', 'success');
             return true;
@@ -193,6 +270,11 @@ class GoogleDriveManager {
                 email: payload.email,
                 picture: payload.picture
             };
+
+            this.idToken = response.credential; // Save ID token for silent restoration
+
+            // --- Google Login Persistence Patch: Save user info and credential ---
+            persistGoogleCredential(response.credential, this.currentUser);
 
             console.log('👤 User signed in:', this.currentUser.name);
             
@@ -238,6 +320,11 @@ class GoogleDriveManager {
             });
         }
 
+        // --- Google Login Persistence Patch: Mark as signed in ---
+        if (this.currentUser && this.idToken) {
+            persistGoogleCredential(this.idToken, this.currentUser);
+        }
+
         console.log('✅ Successfully authenticated');
         
         try {
@@ -271,7 +358,6 @@ class GoogleDriveManager {
         let duration = 4000;
         
         if (isMobileDevice()) {
-            // 手機版錯誤處理
             if (error.type === 'popup_blocked') {
                 message = '📱 請在瀏覽器設定中允許彈出視窗，然後重試';
                 duration = 6000;
@@ -284,7 +370,6 @@ class GoogleDriveManager {
                 message = '手機登入失敗，請重試或使用桌面版';
             }
         } else {
-            // 桌面版錯誤處理
             if (error.type === 'popup_blocked') {
                 message = '請允許彈出視窗以完成登入';
             } else if (error.type === 'access_denied' || error.error === 'access_denied') {
@@ -297,7 +382,6 @@ class GoogleDriveManager {
         showNotification(message, 'error', duration);
     }
 
-    // 手機版登入流程優化
     async signIn() {
         if (!this.isInitialized) {
             if (this.isInitializing) {
@@ -314,18 +398,30 @@ class GoogleDriveManager {
         }
 
         try {
+            // --- Google Login Persistence Patch: Try silent sign-in if persisted credential exists ---
+            const persisted = getPersistedGoogleCredential();
+            if (persisted && !this.accessToken) {
+                // Skip prompting if user is already signed in and valid credential exists
+                this.isSignedIn = true;
+                this.currentUser = persisted.user;
+                this.idToken = persisted.credential;
+                this.updateAuthUI();
+                if (this.tokenClient) {
+                    this.tokenClient.requestAccessToken({prompt: ''});
+                }
+                showNotification('已自動登入 Google 帳號', 'success');
+                return true;
+            }
+
             console.log('🚀 Starting sign-in process...');
             updateSyncStatus('connecting');
             
             if (isMobileDevice()) {
                 console.log('📱 Mobile sign-in flow...');
-                // 手機版：顯示大按鈕讓用戶點擊
                 this.showMobileSignInButton();
             } else {
                 console.log('🖥️ Desktop sign-in flow...');
-                // 桌面版：嘗試自動prompt或顯示按鈕
                 this.renderSignInButton();
-                
                 try {
                     google.accounts.id.prompt((notification) => {
                         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
@@ -338,9 +434,7 @@ class GoogleDriveManager {
                     this.renderSignInButton();
                 }
             }
-            
             return true;
-            
         } catch (error) {
             console.error('❌ Sign-in failed:', error);
             updateSyncStatus('error');
@@ -349,7 +443,6 @@ class GoogleDriveManager {
         }
     }
 
-    // 手機版專用登入按鈕
     showMobileSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         const manualBtn = document.getElementById('manualSignInBtn');
@@ -358,10 +451,8 @@ class GoogleDriveManager {
         
         console.log('📱 Showing mobile sign-in button');
         
-        // 清除現有內容
         buttonContainer.innerHTML = '';
         
-        // 創建大的手機友好按鈕
         const mobileButton = document.createElement('button');
         mobileButton.className = 'btn btn--primary btn--lg btn--full-width mobile-google-btn';
         mobileButton.innerHTML = `
@@ -373,11 +464,9 @@ class GoogleDriveManager {
         mobileButton.onclick = () => {
             console.log('📱 Mobile Google sign-in triggered');
             try {
-                // 直接觸發Google登入流程
                 google.accounts.id.prompt();
             } catch (error) {
                 console.error('Mobile sign-in error:', error);
-                // 降級到token client
                 if (this.tokenClient) {
                     this.tokenClient.requestAccessToken({prompt: 'consent'});
                 }
@@ -385,11 +474,8 @@ class GoogleDriveManager {
         };
         
         buttonContainer.appendChild(mobileButton);
-        
-        // 隱藏桌面版按鈕
         if (manualBtn) manualBtn.style.display = 'none';
         
-        // 添加手機版說明
         const helpText = document.createElement('div');
         helpText.className = 'mobile-help-text';
         helpText.innerHTML = `
@@ -402,26 +488,25 @@ class GoogleDriveManager {
         `;
         buttonContainer.appendChild(helpText);
         
-        // 移除hidden class
         buttonContainer.classList.remove('hidden');
     }
 
-    // 登出
     async signOut() {
         try {
             if (this.isSignedIn) {
-                // 撤銷訪問令牌
                 if (this.accessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
                     google.accounts.oauth2.revoke(this.accessToken);
                 }
                 
-                // 清除狀態
                 this.isSignedIn = false;
                 this.currentUser = null;
                 this.accessToken = null;
                 this.appFolderId = null;
+                this.idToken = null;
+
+                // --- Google Login Persistence Patch: Remove cached credential on sign out ---
+                clearPersistedGoogleCredential();
                 
-                // 清除gapi token
                 if (typeof gapi !== 'undefined' && gapi.client) {
                     gapi.client.setToken(null);
                 }
@@ -430,7 +515,6 @@ class GoogleDriveManager {
                 updateSyncStatus('signed_out');
                 showNotification('已登出 Google 帳號', 'success');
                 
-                // Stop auto sync
                 if (autoSync && autoSync.isRunning) {
                     autoSync.stop();
                 }
@@ -441,7 +525,6 @@ class GoogleDriveManager {
         }
     }
 
-    // 渲染登入按鈕
     renderSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         if (!buttonContainer || typeof google === 'undefined' || !google.accounts) {
@@ -450,9 +533,7 @@ class GoogleDriveManager {
         }
 
         try {
-            // 清除現有內容並渲染Google按鈕
             buttonContainer.innerHTML = '';
-            
             google.accounts.id.renderButton(buttonContainer, {
                 theme: 'outline',
                 size: 'large',
@@ -460,14 +541,10 @@ class GoogleDriveManager {
                 shape: 'rectangular',
                 width: 300
             });
-            
-            // 移除hidden class
             buttonContainer.classList.remove('hidden');
-            
             console.log('✅ Google Sign-In button rendered successfully');
         } catch (error) {
             console.error('Failed to render Google Sign-In button:', error);
-            // Fallback to manual button
             buttonContainer.innerHTML = `
                 <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
                     <span class="google-icon">G</span>
@@ -478,7 +555,6 @@ class GoogleDriveManager {
         }
     }
 
-    // 更新UI狀態
     updateAuthUI() {
         const signInButton = document.getElementById('googleSignInButton');
         const userInfo = document.getElementById('googleUserInfo');
@@ -498,8 +574,6 @@ class GoogleDriveManager {
         } else {
             signInButton.classList.remove('hidden');
             userInfo.classList.add('hidden');
-            
-            // 根據設備類型和初始化狀態渲染登入按鈕
             if (this.isInitialized && typeof google !== 'undefined' && google.accounts) {
                 setTimeout(() => {
                     if (isMobileDevice()) {
@@ -509,7 +583,6 @@ class GoogleDriveManager {
                     }
                 }, 100);
             } else {
-                // 顯示基本登入按鈕
                 signInButton.innerHTML = `
                     <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
                         <span class="google-icon">G</span>
@@ -523,7 +596,6 @@ class GoogleDriveManager {
         updateSyncStatus();
     }
 
-    // 解析JWT token
     parseJwt(token) {
         try {
             const base64Url = token.split('.')[1];
