@@ -1,3 +1,88 @@
+const GOOGLE_LOGIN_STORAGE_KEY = 'googleUserCredential';
+
+function persistGoogleCredential(credential, userObj) {
+    try {
+        localStorage.setItem(GOOGLE_LOGIN_STORAGE_KEY, JSON.stringify({
+            credential,
+            user: userObj,
+            ts: Date.now()
+        }));
+    } catch (e) {}
+}
+
+function clearPersistedGoogleCredential() {
+    try { localStorage.removeItem(GOOGLE_LOGIN_STORAGE_KEY); } catch (e) {}
+}
+
+function getPersistedGoogleCredential() {
+    try {
+        const raw = localStorage.getItem(GOOGLE_LOGIN_STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        // Check JWT token expiry (1 hour)
+        if (data && data.credential && data.user) {
+            const parts = data.credential.split('.');
+            if (parts.length === 3) {
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                if (payload.exp && Date.now() / 1000 < payload.exp) {
+                    return data;
+                }
+            }
+        }
+        return null;
+    } catch (e) { return null; }
+}
+
+// --- In GoogleDriveManager constructor ---
+constructor() {
+    // ...
+    const persisted = getPersistedGoogleCredential();
+    if (persisted) {
+        this.isSignedIn = true;
+        this.currentUser = persisted.user;
+        this.idToken = persisted.credential;
+    }
+}
+
+// --- In initialize() after GIS setup ---
+const persisted = getPersistedGoogleCredential();
+if (persisted && !this.accessToken) {
+    this.isSignedIn = true;
+    this.currentUser = persisted.user;
+    this.idToken = persisted.credential;
+    this.updateAuthUI();
+    if (this.tokenClient) {
+        this.tokenClient.requestAccessToken({prompt: ''});
+    }
+    showNotification('Google Drive 已自動登入', 'success');
+    return true;
+}
+
+// --- In handleCredentialResponse() ---
+persistGoogleCredential(response.credential, this.currentUser);
+
+// --- In handleTokenResponse() ---
+if (this.currentUser && this.idToken) {
+    persistGoogleCredential(this.idToken, this.currentUser);
+}
+
+// --- In signOut() ---
+clearPersistedGoogleCredential();
+
+// --- In signIn(), before showing prompt ---
+const persisted = getPersistedGoogleCredential();
+if (persisted && !this.accessToken) {
+    this.isSignedIn = true;
+    this.currentUser = persisted.user;
+    this.idToken = persisted.credential;
+    this.updateAuthUI();
+    if (this.tokenClient) {
+        this.tokenClient.requestAccessToken({prompt: ''});
+    }
+    showNotification('已自動登入 Google 帳號', 'success');
+    return true;
+}
+
 // Enhanced Game State Management with Mobile-Optimized Google Identity Services
 
 // Google Drive API Configuration - Updated with fixed credentials
