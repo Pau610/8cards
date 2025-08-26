@@ -2444,7 +2444,7 @@ function isTokenExpired(idToken) {
 }
 
 // On DOMContentLoaded:
-document.addEventListener('DOMContentLoaded', async function() {DOMContentLoaded
+document.addEventListener('DOMContentLoaded', async function() {
     initializeEventListeners();
     detectOnlineStatus();
     showWelcome();
