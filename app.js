@@ -2448,6 +2448,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeEventListeners();
     detectOnlineStatus();
     showWelcome();
+
+    // Wait for Google API and token client to be ready before silent login
     setTimeout(async () => {
         try {
             await googleDriveManager.initialize();
@@ -2458,9 +2460,17 @@ document.addEventListener('DOMContentLoaded', async function() {
                 googleDriveManager.currentUser = persisted.user;
                 googleDriveManager.idToken = persisted.credential;
                 googleDriveManager.updateAuthUI();
-                // Silently request a new access token
+                // Silently request a new access token, but only if tokenClient exists
                 if (googleDriveManager.tokenClient) {
                     googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                } else {
+                    // Try again later if tokenClient is not ready
+                    const interval = setInterval(() => {
+                        if (googleDriveManager.tokenClient) {
+                            googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                            clearInterval(interval);
+                        }
+                    }, 300);
                 }
             } else {
                 // Not signed in, show login UI only, do NOT popup
@@ -2468,8 +2478,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 googleDriveManager.currentUser = null;
                 googleDriveManager.updateAuthUI();
             }
-        } catch (error) {}
+        } catch (error) {
+            // handle error (optional)
+        }
     }, 2000);
+
     setInterval(() => {
         updateSyncStatus();
         updateGameLockStatus();
