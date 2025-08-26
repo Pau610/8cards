@@ -1353,10 +1353,10 @@ function updateGameLockStatus() {
         statusEl.innerHTML = `您正在編輯此遊戲 (${timeLeft} 分鐘後自動釋放)`;
         statusEl.style.display = 'block';
         
-        if (timeLeft <= 3) {
-            statusEl.className = 'game-lock-status warning';
-            statusEl.innerHTML = `注意：編輯權限將在 ${timeLeft} 分鐘後過期`;
-        }
+        // if (timeLeft <= 3) {
+        //     statusEl.className = 'game-lock-status warning';
+        //     statusEl.innerHTML = `注意：編輯權限將在 ${timeLeft} 分鐘後過期`;
+        // }
     } else {
         statusEl.style.display = 'none';
     }
