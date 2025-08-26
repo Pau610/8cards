@@ -1108,77 +1108,12 @@ window.backToGameManagement = function() {
     }
 };
 
-// Game Management Functions
-function updateGamesList() {
-    const container = document.getElementById('gamesList');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    const games = Object.values(gameManager.games);
-    if (games.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <h3>尚無遊戲</h3>
-                <p>點擊「創建新遊戲」開始第一個遊戲</p>
-            </div>
-        `;
-        return;
-    }
-    
-    games.forEach(game => {
-        const gameDiv = document.createElement('div');
-        const locked = isGameLocked(game);
-        const syncing = game.syncStatus === 'syncing';
-        
-        gameDiv.className = `game-card ${locked ? 'locked' : ''} ${syncing ? 'syncing' : ''}`;
-        gameDiv.onclick = () => selectGame(game.id);
-        
-        let statusText = '可編輯';
-        if (locked) {
-            statusText = `正被 ${game.lockHolder} 編輯中`;
-        } else if (syncing) {
-            statusText = '正在同步中';
-        }
-        
-        gameDiv.innerHTML = `
-            ${locked ? '<div class="lock-indicator">🔒</div>' : ''}
-            ${syncing ? '<div class="sync-indicator-card">☁️</div>' : ''}
-            <div class="game-header">
-                <h3 class="game-title">${game.name}</h3>
-            </div>
-            <div class="game-meta">
-                <div class="game-meta-item">
-                    <span class="meta-label">創建者</span>
-                    <span>${game.creator}</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">玩家數</span>
-                    <span>${game.playerCount} 人</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">創建時間</span>
-                    <span>${formatDate(game.createdAt)}</span>
-                </div>
-                <div class="game-meta-item">
-                    <span class="meta-label">最後修改</span>
-                    <span>${formatDate(game.lastModified)}</span>
-                </div>
-            </div>
-            <div class="game-status ${locked ? 'locked' : syncing ? 'syncing' : 'available'}">
-                ${statusText}
-            </div>
-        `;
-        container.appendChild(gameDiv);
-    });
-}
-
-// Update game list rendering to remove lock logic:
 function updateGamesList() {
     const container = document.getElementById('gamesList');
     if (!container) return;
     container.innerHTML = '';
-    const games = Object.values(gameManager.games);
+    // Sort games by lastModified descending (latest first)
+    const games = Object.values(gameManager.games).sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
     if (games.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -1227,11 +1162,13 @@ function updateGamesList() {
         container.appendChild(gameDiv);
     });
 }
+
 function updateGamesSelectionList() {
     const container = document.getElementById('gamesSelectionList');
     if (!container) return;
     container.innerHTML = '';
-    const games = Object.values(gameManager.games);
+    // Sort games by lastModified descending (latest first)
+    const games = Object.values(gameManager.games).sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
     if (games.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
