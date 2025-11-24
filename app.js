@@ -1505,6 +1505,11 @@ window.addPlayer = function() {
     updatePlayerList();
     updateConfirmButton();
     autoSave();
+
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
 };
 
 // Remove Player (from current game only, keep record in allPlayers)
@@ -1515,6 +1520,11 @@ window.removePlayer = function(playerId) {
     updatePlayerList();
     updateConfirmButton();
     autoSave();
+
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
 };
 
 // List all current players
@@ -1554,6 +1564,11 @@ window.confirmPlayers = function() {
     gameState.lastModified = new Date().toISOString();
     autoSave();
     showBankerSelection();
+
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
 };
 
 // Settings Functions
@@ -1892,8 +1907,12 @@ window.confirmAmount = function() {
     
     closeAmountModal();
     updateRecordScreen();
-};
 
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
+};
 // Add Player Modal
 function openAddPlayerModal() {
     const input = document.getElementById('newPlayerNameInput');
@@ -1966,6 +1985,11 @@ window.confirmAddPlayer = function() {
     
     closeAddPlayerModal();
     updateRecordScreen();
+
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
 };
 
 // Detailed Records Functions
@@ -2106,6 +2130,11 @@ window.confirmEditRecord = function() {
     closeEditRecordModal();
     updateDetailedRecords();
     showNotification('記錄已更新，總計重新計算', 'success');
+    
+    // Trigger immediate cloud sync if signed in
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+        googleDriveManager.syncWithCloud();
+    }
 };
 
 function recalculatePlayerTotals() {
