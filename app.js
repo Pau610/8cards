@@ -487,9 +487,14 @@ class GoogleDriveManager {
         }
     }
 
-        async uploadGameData(gameData) {
+    // --- Improved uploadGameData: offline check, Authorization fallback header, better logging ---
+    async uploadGameData(gameData) {
         if (!this.isSignedIn || !this.appFolderId || typeof gapi === 'undefined' || !gapi.client) {
-            throw new Error('Not authenticated or Google Drive API not available');
+            throw { status: 401, message: 'Not authenticated or Google Drive API not available' };
+        }
+
+        if (!navigator.onLine) {
+            throw { status: 0, message: 'offline' };
         }
 
         try {
@@ -500,7 +505,7 @@ class GoogleDriveManager {
                     appName: GOOGLE_CONFIG.appName,
                     lastSync: new Date().toISOString(),
                     deviceId: this.getDeviceId(),
-                    userId: this.currentUser.email
+                    userId: this.currentUser && this.currentUser.email
                 },
                 gameManager: gameData
             };
@@ -520,7 +525,7 @@ class GoogleDriveManager {
             let method = 'POST';
             let url = 'https://www.googleapis.com/upload/drive/v3/files';
             if (existingFiles.result.files.length > 0) {
-                // PATCH: do NOT include parents
+                // PATCH: update existing file (do NOT include parents)
                 url += '/' + existingFiles.result.files[0].id;
                 method = 'PATCH';
             } else {
@@ -537,13 +542,19 @@ class GoogleDriveManager {
                 JSON.stringify(dataToUpload, null, 2) +
                 close_delim;
 
+            // Ensure Authorization header present as fallback
+            const headers = {
+                'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+            };
+            if (this.accessToken) {
+                headers['Authorization'] = 'Bearer ' + this.accessToken;
+            }
+
             const response = await gapi.client.request({
                 path: url,
                 method: method,
                 params: {'uploadType': 'multipart'},
-                headers: {
-                    'Content-Type': 'multipart/related; boundary="' + boundary + '"'
-                },
+                headers: headers,
                 body: multipartRequestBody
             });
 
@@ -552,6 +563,9 @@ class GoogleDriveManager {
             return response.result;
         } catch (error) {
             console.error('Failed to upload game data:', error);
+            if (!navigator.onLine) {
+                throw { status: 0, message: 'offline', raw: error };
+            }
             throw error;
         }
     }
@@ -703,21 +717,50 @@ class GoogleDriveManager {
         return latest.toISOString();
     }
 
+    // --- Improved syncWithCloud: network check, retry scheduling, clearer logging ---
     async syncWithCloud() {
         if (!this.isSignedIn) {
             showNotification('請先登入 Google Drive', 'warning');
             return false;
         }
 
+        if (!navigator.onLine) {
+            // Immediate feedback and schedule retry when back online
+            showNotification('網路中斷，將在恢復網路後自動重試同步', 'warning', 4000);
+            updateSyncStatus('error');
+            scheduleRetrySync();
+            return false;
+        }
+
         try {
             showSyncProgress('正在上傳數據...', 50);
-            await this.uploadGameData(gameManager);
+            const result = await this.uploadGameData(gameManager);
+            cloudConfig.lastSyncTime = new Date().toISOString();
             showSyncProgress('同步完成', 100);
             setTimeout(() => showSyncProgress('', 0), 1000);
             showNotification('雲端同步成功', 'success');
+
+            // mark saved
+            gameManager.hasUnsavedChanges = false;
+
             return true;
         } catch (error) {
             showSyncProgress('', 0);
+            console.error('syncWithCloud error:', error);
+            // If offline, schedule retry
+            if (error && (error.status === 0 || error.message === 'offline')) {
+                showNotification('網路連線中斷，稍後會自動重試同步', 'warning', 4000);
+                scheduleRetrySync();
+            } else if (error && error.status === 401) {
+                // auth expired
+                showNotification('認證已過期，請重新登入', 'error', 4000);
+                this.signOut();
+            } else if (error && error.result && error.result.error && error.result.error.message) {
+                showNotification('雲端錯誤: ' + error.result.error.message, 'error', 5000);
+            } else {
+                // generic fallback
+                showNotification('同步失敗，請檢查網路連線或稍後再試', 'error', 4000);
+            }
             this.handleSyncError(error);
             return false;
         }
@@ -727,23 +770,23 @@ class GoogleDriveManager {
         console.error('Sync error:', error);
 
         let errorMessage = '同步失敗，請檢查網路連線';
-        if (error.status === 401) {
+        if (error && error.status === 401) {
             errorMessage = '認證已過期，請重新登入';
             this.signOut();
-        } else if (error.status === 403) {
+        } else if (error && error.status === 403) {
             // Try to get detailed error message from Google
             if (error.result && error.result.error && error.result.error.message) {
                 errorMessage = 'Google Drive 錯誤: ' + error.result.error.message;
             } else {
                 errorMessage = 'Google Drive 權限錯誤，請確認權限與設定';
             }
-        } else if (error.status === 404) {
+        } else if (error && error.status === 404) {
             errorMessage = '雲端檔案不存在，將創建新備份';
         } else if (!navigator.onLine) {
             errorMessage = '網路連線中斷，將在恢復後自動同步';
             this.showOfflineMode();
         }
-        showNotification(errorMessage, error.status === 403 ? 'warning' : 'error');
+        showNotification(errorMessage, error && error.status === 403 ? 'warning' : 'error');
         updateSyncStatus('error');
     }
     
@@ -1831,7 +1874,7 @@ window.nextRound = function() {
     autoSave();
 
     // --- ADDED: Immediately upload to cloud after next round ---
-    if (googleDriveManager.isSignedIn) {
+    if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
         googleDriveManager.syncWithCloud();
     }
     // ----------------------------------------------------------
@@ -1913,6 +1956,7 @@ window.confirmAmount = function() {
         googleDriveManager.syncWithCloud();
     }
 };
+
 // Add Player Modal
 function openAddPlayerModal() {
     const input = document.getElementById('newPlayerNameInput');
@@ -2457,3 +2501,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 60000);
 });
 console.log('📱 Enhanced script loaded with Mobile-Optimized Google Identity Services (GIS) integration');
+
+// --- New helper: scheduleRetrySync (one-shot retry when online) ---
+function scheduleRetrySync() {
+    function onceOnline() {
+        window.removeEventListener('online', onceOnline);
+        console.log('Network restored, attempting cloud sync...');
+        // Prefer using the manager's sync method if available
+        if (typeof googleDriveManager !== 'undefined' && googleDriveManager.isSignedIn) {
+            googleDriveManager.syncWithCloud();
+        } else {
+            // If manager not available yet, try manualSyncWithCloud wrapper
+            if (typeof manualSyncWithCloud === 'function') {
+                manualSyncWithCloud();
+            }
+        }
+    }
+    // attach one-time listener
+    window.addEventListener('online', onceOnline);
+}
