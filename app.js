@@ -369,6 +369,7 @@ class GoogleDriveManager {
         }
     }
 
+    // -- PATCHED -- //
     renderSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         if (!buttonContainer || typeof google === 'undefined' || !google.accounts) return;
@@ -384,12 +385,14 @@ class GoogleDriveManager {
             buttonContainer.classList.remove('hidden');
         } catch (error) {
             buttonContainer.innerHTML = `
-                <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
+                <button class="btn btn--outline btn--full-width" id="mainSignInBtn">
                     <span class="google-icon">G</span>
                     使用Google帳號登入
                 </button>
             `;
             buttonContainer.classList.remove('hidden');
+            const fallbackBtn = document.getElementById('mainSignInBtn');
+            if (fallbackBtn) fallbackBtn.onclick = window.signInGoogle;
         }
     }
 
@@ -419,12 +422,14 @@ class GoogleDriveManager {
                 }, 100);
             } else {
                 signInButton.innerHTML = `
-                    <button class="btn btn--outline btn--full-width" onclick="signInGoogle()">
+                    <button class="btn btn--outline btn--full-width" id="mainSignInBtn">
                         <span class="google-icon">G</span>
                         使用Google帳號登入${isMobileDevice() ? ' (手機版)' : ''}
                     </button>
                 `;
                 signInButton.classList.remove('hidden');
+                const fallbackBtn = document.getElementById('mainSignInBtn');
+                if (fallbackBtn) fallbackBtn.onclick = window.signInGoogle;
             }
         }
         updateSyncStatus();
@@ -445,6 +450,7 @@ class GoogleDriveManager {
             throw error;
         }
     }
+    
     async ensureAppFolder() {
         if (typeof gapi === 'undefined' || !gapi.client || !gapi.client.drive) {
             console.log('Google Drive API not available');
