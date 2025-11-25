@@ -1,6 +1,7 @@
 // Enhanced Game State Management with Mobile-Optimized Google Identity Services
 // --- Google Login Persistence & One-Time Login Patch ---
 
+// Google Drive API Configuration - Updated with fixed credentials
 const GOOGLE_CONFIG = {
     apiKey: 'AIzaSyAc6cpX92QtlxoBz5uDJVaLGW18oD0R0Hs',
     clientId: '969122977239-1n1vhboklrshhlfv70ak1jhtd47hb0ef.apps.googleusercontent.com',
@@ -9,6 +10,7 @@ const GOOGLE_CONFIG = {
     appName: 'Gambling Scorekeeper'
 };
 
+// --- Login session localStorage helpers ---
 const GOOGLE_LOGIN_STORAGE_KEY = 'googleUserCredential_8cards';
 
 function persistGoogleCredential(credential, userObj) {
@@ -33,6 +35,7 @@ function getPersistedGoogleCredential() {
         const raw = localStorage.getItem(GOOGLE_LOGIN_STORAGE_KEY);
         if (!raw) return null;
         const data = JSON.parse(raw);
+        // Check that it's not expired (JWT exp field, 1 hour for id_token)
         if (data && data.credential && data.user) {
             const jwtParts = data.credential.split('.');
             if (jwtParts.length === 3) {
@@ -46,12 +49,14 @@ function getPersistedGoogleCredential() {
     } catch (e) { return null; }
 }
 
+// Device Detection Functions
 function isMobileDevice() {
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
     const mobileRegex = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
     const isMobileUA = mobileRegex.test(userAgent);
     const isMobileScreen = window.innerWidth <= 768;
-    return isMobileUA || isMobileScreen;
+    const result = isMobileUA || isMobileScreen;
+    return result;
 }
 
 function isIOSSafari() {
@@ -59,6 +64,7 @@ function isIOSSafari() {
     return /iPad|iPhone|iPod/.test(userAgent) && /Safari/.test(userAgent) && !/CriOS|FxiOS|OPiOS|mercury/.test(userAgent);
 }
 
+// Google Drive Manager Class with Mobile-Optimized Google Identity Services
 class GoogleDriveManager {
     constructor() {
         this.isSignedIn = false;
@@ -72,7 +78,9 @@ class GoogleDriveManager {
         this.initRetryCount = 0;
         this.isInitializing = false;
         this.idToken = null;
+        this.requestingAccessToken = false; // guard to prevent duplicate token requests
 
+        // --- Restore login session from localStorage if possible (for persistent login) ---
         const persisted = getPersistedGoogleCredential();
         if (persisted) {
             this.isSignedIn = true;
@@ -85,11 +93,13 @@ class GoogleDriveManager {
         if (this.isInitializing) return false;
         this.isInitializing = true;
         try {
+            // 1. Check config
             if (!GOOGLE_CONFIG.apiKey || !GOOGLE_CONFIG.clientId) {
                 this.updateAuthUI();
                 this.isInitializing = false;
                 return false;
             }
+            // 2. Wait for Google APIs
             let attempts = 0;
             const maxAttempts = 10;
             while (attempts < maxAttempts) {
@@ -101,6 +111,7 @@ class GoogleDriveManager {
                 this.isInitializing = false;
                 return false;
             }
+            // 3. Load gapi client
             await new Promise((resolve, reject) => {
                 gapi.load('client', {
                     callback: resolve,
@@ -112,6 +123,7 @@ class GoogleDriveManager {
                 discoveryDocs: [GOOGLE_CONFIG.discoveryDoc]
             });
 
+            // 4. Initialize Google Identity Service (GIS)
             const initConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
                 callback: this.handleCredentialResponse.bind(this),
@@ -128,6 +140,7 @@ class GoogleDriveManager {
             }
             google.accounts.id.initialize(initConfig);
 
+            // Token Client for API access
             const tokenConfig = {
                 client_id: GOOGLE_CONFIG.clientId,
                 scope: GOOGLE_CONFIG.scopes,
@@ -141,14 +154,21 @@ class GoogleDriveManager {
             this.initRetryCount = 0;
             this.isInitializing = false;
 
+            // --- Restore session if token in storage and still valid ---
             const persisted = getPersistedGoogleCredential();
             if (persisted && !this.accessToken) {
                 this.isSignedIn = true;
                 this.currentUser = persisted.user;
                 this.idToken = persisted.credential;
                 this.updateAuthUI();
-                if (this.tokenClient && !this.accessToken) {
-                    this.tokenClient.requestAccessToken({prompt: ''});
+                // Attempt silent access token acquisition, guarded to avoid duplicate requests
+                if (this.tokenClient && !this.accessToken && !this.requestingAccessToken) {
+                    this.requestingAccessToken = true;
+                    try {
+                        this.tokenClient.requestAccessToken({prompt: ''});
+                    } catch (e) {
+                        this.requestingAccessToken = false;
+                    }
                 }
                 showNotification('Google Drive 已自動登入', 'success');
                 return true;
@@ -164,6 +184,7 @@ class GoogleDriveManager {
         }
     }
 
+    // --- Only one login flow: handleCredentialResponse is called on redirect or popup completion ---
     handleCredentialResponse(response) {
         try {
             const payload = this.parseJwt(response.credential);
@@ -174,12 +195,12 @@ class GoogleDriveManager {
                 picture: payload.picture
             };
             this.idToken = response.credential;
+            // Store session for persistent login
             persistGoogleCredential(response.credential, this.currentUser);
             this.isSignedIn = true;
             this.updateAuthUI();
-            if (this.tokenClient) {
-                this.tokenClient.requestAccessToken({ prompt: '' });
-            }
+            // PATCH: DO NOT immediately request access token here to avoid a second popup.
+            // Access token should be requested only when needed (e.g., on a sync action) or silently.
         } catch (error) {
             updateSyncStatus('error');
             showNotification('登入失敗，請重試', 'error');
@@ -188,19 +209,30 @@ class GoogleDriveManager {
 
     requestAccessToken() {
         if (this.tokenClient) {
-            this.tokenClient.requestAccessToken({prompt: ''});
+            if (this.requestingAccessToken) return;
+            this.requestingAccessToken = true;
+            try {
+                this.tokenClient.requestAccessToken({prompt: ''});
+            } catch (e) {
+                this.requestingAccessToken = false;
+                throw e;
+            }
         } else {
             updateSyncStatus('error');
         }
     }
 
     async handleTokenResponse(response) {
+        // clear requesting flag regardless
+        this.requestingAccessToken = false;
+
         if (response.error) {
             this.handleTokenError(response);
             return;
         }
         this.accessToken = response.access_token;
         this.isSignedIn = true;
+        // Store session persistently
         if (this.currentUser && this.idToken) {
             persistGoogleCredential(this.idToken, this.currentUser);
         }
@@ -224,6 +256,9 @@ class GoogleDriveManager {
     }
 
     handleTokenError(error) {
+        // clear requesting flag
+        this.requestingAccessToken = false;
+
         updateSyncStatus('error');
         let message = '';
         let duration = 4000;
@@ -251,21 +286,28 @@ class GoogleDriveManager {
         showNotification(message, 'error', duration);
     }
 
-    // -- PATCHED: NO DOUBLE POPUP --
+    // Entry point for user-initiated sign-in flow
     async signIn() {
+        // --- PATCH: Only login if not already sessioned ---
         const persisted = getPersistedGoogleCredential();
         if ((persisted && !this.accessToken) || this.isSignedIn) {
             this.isSignedIn = true;
             this.currentUser = persisted?.user || this.currentUser;
             this.idToken = persisted?.credential || this.idToken;
             this.updateAuthUI();
-            if (this.tokenClient && !this.accessToken) {
-                this.tokenClient.requestAccessToken({ prompt: '' });
+            if (this.tokenClient && !this.accessToken && !this.requestingAccessToken) {
+                this.requestingAccessToken = true;
+                try {
+                    this.tokenClient.requestAccessToken({ prompt: '' });
+                } catch (e) {
+                    this.requestingAccessToken = false;
+                }
             }
             showNotification('已自動登入 Google 帳號', 'success');
             return true;
         }
 
+        // Otherwise, normal login
         if (!this.isInitialized) {
             if (this.isInitializing) {
                 showNotification('Google Drive 正在初始化中，請稍等...', 'warning');
@@ -281,7 +323,8 @@ class GoogleDriveManager {
 
         try {
             updateSyncStatus('connecting');
-            google.accounts.id.prompt(); // ONLY trigger prompt, NO accessToken call until credential returns!
+            // Trigger GIS prompt for account selection. Do NOT also call requestAccessToken here.
+            google.accounts.id.prompt();
             return true;
         } catch (error) {
             updateSyncStatus('error');
@@ -290,7 +333,6 @@ class GoogleDriveManager {
         }
     }
 
-    // PATCHED: mobile button always sends ONLY ONE prompt (never .requestAccessToken here)
     showMobileSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         if (!buttonContainer) return;
@@ -338,7 +380,6 @@ class GoogleDriveManager {
         }
     }
 
-    // PATCHED: fallback renders now always safe/no double login
     renderSignInButton() {
         const buttonContainer = document.getElementById('googleSignInButton');
         if (!buttonContainer || typeof google === 'undefined' || !google.accounts) return;
@@ -419,7 +460,6 @@ class GoogleDriveManager {
             throw error;
         }
     }
-    
     async ensureAppFolder() {
         if (typeof gapi === 'undefined' || !gapi.client || !gapi.client.drive) {
             console.log('Google Drive API not available');
@@ -709,6 +749,20 @@ class GoogleDriveManager {
 
         try {
             showSyncProgress('正在上傳數據...', 50);
+            // Ensure we have an access token before attempting upload
+            if (!this.accessToken) {
+                // Request silently; if this triggers a prompt it will be handled by GIS.
+                if (this.tokenClient && !this.requestingAccessToken) {
+                    this.requestingAccessToken = true;
+                    this.tokenClient.requestAccessToken({ prompt: '' });
+                    // The actual upload will proceed in handleTokenResponse after token is obtained.
+                    showNotification('正在取得授權，請完成 Google 帳號授權以完成同步', 'info', 4000);
+                    return false;
+                } else {
+                    throw { status: 401, message: 'No access token' };
+                }
+            }
+
             const result = await this.uploadGameData(gameManager);
             cloudConfig.lastSyncTime = new Date().toISOString();
             showSyncProgress('同步完成', 100);
@@ -1307,11 +1361,6 @@ function updateGameLockStatus() {
         statusEl.className = 'game-lock-status';
         statusEl.innerHTML = `您正在編輯此遊戲 (${timeLeft} 分鐘後自動釋放)`;
         statusEl.style.display = 'block';
-        
-        // if (timeLeft <= 3) {
-        //     statusEl.className = 'game-lock-status warning';
-        //     statusEl.innerHTML = `注意：編輯權限將在 ${timeLeft} 分鐘後過期`;
-        // }
     } else {
         statusEl.style.display = 'none';
     }
@@ -2445,14 +2494,24 @@ document.addEventListener('DOMContentLoaded', async function() {
                 googleDriveManager.currentUser = persisted.user;
                 googleDriveManager.idToken = persisted.credential;
                 googleDriveManager.updateAuthUI();
-                // Silently request a new access token, but only if tokenClient exists
-                if (googleDriveManager.tokenClient) {
-                    googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                // Try to silently request a new access token, but only if tokenClient exists and we're not already requesting
+                if (googleDriveManager.tokenClient && !googleDriveManager.accessToken && !googleDriveManager.requestingAccessToken) {
+                    googleDriveManager.requestingAccessToken = true;
+                    try {
+                        googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                    } catch (e) {
+                        googleDriveManager.requestingAccessToken = false;
+                    }
                 } else {
-                    // Try again later if tokenClient is not ready
+                    // If tokenClient is not ready, try again later
                     const interval = setInterval(() => {
-                        if (googleDriveManager.tokenClient) {
-                            googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                        if (googleDriveManager.tokenClient && !googleDriveManager.accessToken && !googleDriveManager.requestingAccessToken) {
+                            googleDriveManager.requestingAccessToken = true;
+                            try {
+                                googleDriveManager.tokenClient.requestAccessToken({prompt: ''});
+                            } catch (e) {
+                                googleDriveManager.requestingAccessToken = false;
+                            }
                             clearInterval(interval);
                         }
                     }, 300);
